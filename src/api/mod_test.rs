@@ -7,7 +7,7 @@ use axum::response::Response;
 use axum::{routing::MethodRouter, Router};
 use http_body_util::BodyExt;
 use hyper::StatusCode;
-use serde::Serialize;
+use serde::Deserialize;
 use tower::util::ServiceExt;
 
 use crate::api::{JsonResponse, JsonResult, StatusBody};
@@ -20,14 +20,17 @@ fn input() -> hyper::Request<axum::body::Body> {
         .unwrap()
 }
 
-async fn assert_response<T>(response: Response<Body>, expect_code: StatusCode, expect_body: T)
-where
-    T: Serialize + PartialEq + Debug,
-{
+async fn assert_response<T: for<'a> Deserialize<'a> + PartialEq + Debug>(
+    response: Response<Body>,
+    expect_code: StatusCode,
+    expect_body: T,
+) {
     assert_eq!(response.status(), expect_code);
 
     let body = response.into_body().collect().await.unwrap().to_bytes();
-    assert_eq!(body, serde_json::to_vec(&expect_body).unwrap());
+    let body: T = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(body, expect_body);
 }
 
 async fn assert_status_response(
