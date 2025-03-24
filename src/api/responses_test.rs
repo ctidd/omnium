@@ -10,7 +10,7 @@ use hyper::StatusCode;
 use serde::Deserialize;
 use tower::util::ServiceExt;
 
-use crate::api::{JsonResponse, JsonResult, StatusBody};
+use crate::api::responses::{JsonResponse, JsonResult, StatusBody};
 
 fn input() -> hyper::Request<axum::body::Body> {
     Request::builder()
