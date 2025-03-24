@@ -6,6 +6,7 @@ use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use axum::middleware::from_fn_with_state;
 use axum::Extension;
+use axum::{routing::get, Router};
 use http_body_util::BodyExt;
 use jsonwebtoken::EncodingKey;
 use tower::ServiceExt;
@@ -43,8 +44,6 @@ fn fake_app_state() -> Arc<FakeOmniumState> {
         service_secret: create_service_secret().unwrap(),
     })
 }
-
-use axum::{routing::get, Router};
 
 fn app(state: Arc<FakeOmniumState>) -> Router {
     Router::new()
