@@ -56,14 +56,14 @@ async fn handler() -> JsonResult {
 This error handling convention is provided by an implementation of `IntoResponse` for `Into<anyhow::Error>`, added by this crate. With this convention, unhandled errors have built-in `IntoResponse` rendering and other errors must be rendered explicitly by a handler.
 
 
-## authn
+## security
 
-The `authn` module provides JWT-based authentication middleware, supporting both a cookie and the `authorization` header for browser-based or programmatic authentication.
+The `security` module provides JWT-based authentication middleware, supporting both a cookie and the `authorization` header for browser-based or programmatic authentication.
 
-Create a session secret:
+Create a service secret:
 
 ```rs
-let session_secret = create_session_secret();
+let service_secret = create_service_secret();
 ```
 
 Configure authentication middleware:
@@ -73,13 +73,13 @@ Configure authentication middleware:
 struct AppUser {}
 
 struct AppOmniumState {
-    pub session_secret: OmniumSessionSecret,
+    pub service_secret: OmniumSessionSecret,
 }
 
 impl OmniumState<AppUser> for Arc<AppOmniumState> {
-    async fn session_secret(&self) -> anyhow::Result<&OmniumSessionSecret> {
+    async fn service_secret(&self) -> anyhow::Result<&OmniumSessionSecret> {
         // Return secret from application secret manager:
-        Ok(&self.session_secret)
+        Ok(&self.service_secret)
     }
 
 
@@ -109,7 +109,7 @@ Create the user session:
 ```rs
 create_session(
     "some-user-id",
-    &EncodingKey::from_secret(state.session_secret.value.as_bytes()),
+    &EncodingKey::from_secret(state.service_secret.value.as_bytes()),
     Duration::from_secs(60),
 );
 ```
@@ -127,3 +127,7 @@ pub async fn handler(
     println!("Caller is: {}", caller);
 }
 ```
+
+Because a variety of data may need to be passed and verified between an application and its users, `encode_claims` and `decode_claims` may also be used for other purposes other than authentication. Note that claims are signed but not encrypted.
+
+In addition to claims-based utilities, this crate wraps `aes_gcm` to provide utilties `encrypt_string_aes256_gcm` and `decrypt_string_aes256_gcm`. A secret created by `create_service_secret` can also be used with these encryption utilities.

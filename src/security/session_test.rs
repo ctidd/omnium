@@ -11,9 +11,9 @@ use jsonwebtoken::EncodingKey;
 use tower::ServiceExt;
 
 use crate::api::responses::StatusBody;
-use crate::authn::claims::encode_claims;
-use crate::authn::secrets::{create_session_secret, OmniumSessionSecret};
-use crate::authn::session::{
+use crate::security::claims::encode_claims;
+use crate::security::secrets::{create_service_secret, OmniumServiceSecret};
+use crate::security::session::{
     authenticate, create_session, OmniumState, SessionClaims, SESSION_CLAIMS_TYPE,
 };
 
@@ -23,12 +23,12 @@ struct FakeUser {
 }
 
 struct FakeOmniumState {
-    pub session_secret: OmniumSessionSecret,
+    pub service_secret: OmniumServiceSecret,
 }
 
 impl OmniumState<FakeUser> for Arc<FakeOmniumState> {
-    async fn session_secret(&self) -> anyhow::Result<&OmniumSessionSecret> {
-        Ok(&self.session_secret)
+    async fn service_secret(&self) -> anyhow::Result<&OmniumServiceSecret> {
+        Ok(&self.service_secret)
     }
 
     async fn user_lookup(&self, _user_id: String) -> anyhow::Result<Option<FakeUser>> {
@@ -40,7 +40,7 @@ impl OmniumState<FakeUser> for Arc<FakeOmniumState> {
 
 fn fake_app_state() -> Arc<FakeOmniumState> {
     Arc::new(FakeOmniumState {
-        session_secret: create_session_secret().unwrap(),
+        service_secret: create_service_secret().unwrap(),
     })
 }
 
@@ -67,7 +67,7 @@ async fn test_session_header_is_accepted() {
 
     let claims = create_session(
         "test-user-id",
-        &EncodingKey::from_secret(state.session_secret.value.as_bytes()),
+        &EncodingKey::from_secret(state.service_secret.value.as_bytes()),
         Duration::from_secs(60),
     );
 
@@ -111,7 +111,7 @@ async fn test_barely_expired_session_header_is_still_accepted() {
             .unwrap(),
             omn_cl_typ: SESSION_CLAIMS_TYPE.into(),
         },
-        &EncodingKey::from_secret(state.session_secret.value.as_bytes()),
+        &EncodingKey::from_secret(state.service_secret.value.as_bytes()),
     );
 
     let app = app(state).into_service();
@@ -149,7 +149,7 @@ async fn test_expired_session_header_is_rejected() {
             .unwrap(),
             omn_cl_typ: SESSION_CLAIMS_TYPE.into(),
         },
-        &EncodingKey::from_secret(state.session_secret.value.as_bytes()),
+        &EncodingKey::from_secret(state.service_secret.value.as_bytes()),
     );
 
     let app = app(state).into_service();
@@ -197,7 +197,7 @@ async fn test_wrong_claims_type_is_rejected() {
             .unwrap(),
             omn_cl_typ: "illegal".to_string(),
         },
-        &EncodingKey::from_secret(state.session_secret.value.as_bytes()),
+        &EncodingKey::from_secret(state.service_secret.value.as_bytes()),
     );
 
     let app = app(state).into_service();

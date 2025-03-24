@@ -1,2 +1,2 @@
 pub mod api;
-pub mod authn;
+pub mod security;

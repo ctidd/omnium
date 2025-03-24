@@ -8,16 +8,16 @@ use jsonwebtoken::{DecodingKey, EncodingKey};
 use serde::{Deserialize, Serialize};
 
 use crate::api::responses::{JsonResponse, JsonResult};
-use crate::authn::claims::decode_claims;
-use crate::authn::claims::{encode_claims, expires_in};
-use crate::authn::secrets::OmniumSessionSecret;
+use crate::security::claims::decode_claims;
+use crate::security::claims::{encode_claims, expires_in};
+use crate::security::secrets::OmniumServiceSecret;
 
 pub const SESSION_CLAIMS_TYPE: &str = "session";
 
 pub trait OmniumState<U> {
-    fn session_secret(
+    fn service_secret(
         &self,
-    ) -> impl std::future::Future<Output = anyhow::Result<&OmniumSessionSecret>> + Send;
+    ) -> impl std::future::Future<Output = anyhow::Result<&OmniumServiceSecret>> + Send;
 
     fn user_lookup(
         &self,
@@ -74,7 +74,7 @@ pub async fn authenticate<U: Clone + Send + Sync + 'static, S: OmniumState<U>>(
     if let Some(credential) = credential {
         if let Ok(decoded) = decode_claims::<SessionClaims>(
             &credential,
-            &DecodingKey::from_secret(state.session_secret().await?.value.as_bytes()),
+            &DecodingKey::from_secret(state.service_secret().await?.value.as_bytes()),
         ) {
             if decoded.claims.omn_cl_typ != SESSION_CLAIMS_TYPE {
                 println!("Authentication rejected! Illegal claims type.");
