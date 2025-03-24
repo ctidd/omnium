@@ -5,6 +5,7 @@ use std::time::{Duration, SystemTime};
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use axum::middleware::from_fn_with_state;
+use axum::Extension;
 use http_body_util::BodyExt;
 use jsonwebtoken::EncodingKey;
 use tower::ServiceExt;
@@ -17,7 +18,9 @@ use crate::authn::session::{
 };
 
 #[derive(Clone)]
-struct FakeUser {}
+struct FakeUser {
+    name: String,
+}
 
 struct FakeOmniumState {
     pub session_secret: OmniumSessionSecret,
@@ -29,7 +32,9 @@ impl OmniumState<FakeUser> for Arc<FakeOmniumState> {
     }
 
     async fn user_lookup(&self, _user_id: String) -> anyhow::Result<Option<FakeUser>> {
-        Ok(Some(FakeUser {}))
+        Ok(Some(FakeUser {
+            name: "Test User".into(),
+        }))
     }
 }
 
@@ -43,7 +48,12 @@ use axum::{routing::get, Router};
 
 fn app(state: Arc<FakeOmniumState>) -> Router {
     Router::new()
-        .route("/api/user", get(|| async { "Hello, user!" }))
+        .route(
+            "/api/user",
+            get(|Extension(caller): Extension<FakeUser>| async move {
+                format!("Hello, {}!", caller.name)
+            }),
+        )
         .layer(from_fn_with_state(
             state.clone(),
             authenticate::<FakeUser, Arc<FakeOmniumState>>,
@@ -77,6 +87,11 @@ async fn test_session_header_is_accepted() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+
+    assert_eq!(
+        response.into_body().collect().await.unwrap().to_bytes(),
+        "Hello, Test User!"
+    )
 }
 
 #[tokio::test]
