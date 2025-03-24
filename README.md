@@ -4,28 +4,21 @@ A set of extensions for building web applications on axum.
 
 ## api
 
-The `api` module provides response conventions for axum handlers, implementing `IntoResponse` for typical use cases.
+The `api` module provides a set of response conventions for axum handlers, implementing `IntoResponse` for typical use cases.
 
-A handler returns `JsonResult`, which represents HTTP responses as `Ok(...)` arm regardless of status code, and represents propagated errors as `Err(...)` arm:
-
-```rs
-async fn handler() -> JsonResult {
-    // ...
-}
-```
-
-The `Err` arm is used to handle internal server errors. A handler can return `Into<anyhow::Error>`, which will be handled as an `INTERNAL_SERVER_ERROR` response:
+A handler returns `JsonResult`, which represents HTTP responses on the `Ok(...)` arm regardless of status code:
 
 ```rs
 async fn handler() -> JsonResult {
-    let success = try_do_or_err().await?;
-    // ...
+    let result = try_do_or_err().await;
+    match result {
+        Ok => JsonResponse.of_status(StatusCode::ACCEPTED).into()
+        Err => JsonResponse.of_status(StatusCode::CONFLICT).into()
+    }
 }
 ```
 
-The tradeoff with this pattern is that it does prevent implementing `IntoResponse` specializations for custom application errors. This works best in practice when modeling error responses at the boundary of API handlers, and keeping rendering of error responses explicit other than for internal server errors.
-
-All other response functionality is provided through the `JsonResponse` struct. The handler result type `JsonResult` implements `From<JsonResponse>`, so `JsonResponse` can be returned from a handler with a call to `.into()`.
+Response conventions are provided through the `JsonResponse` struct. The handler result type `JsonResult` implements `From<JsonResponse>`, so `JsonResponse` can be returned from a handler with a call to `.into()`.
 
 A handler can return a JSON response for any serializable body:
 
@@ -51,9 +44,21 @@ async fn handler() -> JsonResult {
 }
 ```
 
+Finally, the `Err` arm is used to handle internal server errors. A handler can return `Into<anyhow::Error>`, which will be rendered as an `INTERNAL_SERVER_ERROR` response:
+
+```rs
+async fn handler() -> JsonResult {
+    let success = try_do_or_err().await?;
+    // ...
+}
+```
+
+This error handling convention is provided by an implementation of `IntoResponse` for `Into<anyhow::Error>`, added by this crate. With this convention, unhandled errors have built-in `IntoResponse` rendering and other errors must be rendered explicitly by a handler.
+
+
 ## authn
 
-The `authn` module provides JWT authentication middleware.
+The `authn` module provides JWT-based authentication middleware, supporting both a cookie and the `authorization` header for browser-based or programmatic authentication.
 
 Create a session secret:
 
