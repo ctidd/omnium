@@ -6,7 +6,7 @@ A set of extensions for building web applications on axum.
 
 The `api` module provides response conventions for axum handlers, implementing `IntoResponse` for typical use cases.
 
-A handler returns `JsonResult`, which handles responses as `Ok(...)` arm and propagated errors as `Err(...)` arm:
+A handler returns `JsonResult`, which represents HTTP responses as `Ok(...)` arm regardless of status code, and represents propagated errors as `Err(...)` arm:
 
 ```rs
 async fn handler() -> JsonResult {
@@ -14,7 +14,7 @@ async fn handler() -> JsonResult {
 }
 ```
 
-A handler can bail with `Into<anyhow::Error>`, which will be handled as an `INTERNAL_SERVER_ERROR` response:
+The `Err` arm is used to handle internal server errors. A handler can return `Into<anyhow::Error>`, which will be handled as an `INTERNAL_SERVER_ERROR` response:
 
 ```rs
 async fn handler() -> JsonResult {
@@ -23,7 +23,9 @@ async fn handler() -> JsonResult {
 }
 ```
 
-Functionality is provided through the `JsonResponse` struct. The handler result type `JsonResult` implements `From<JsonResponse>`, so `JsonResponse` can be returned from a handler with a call to `.into()`.
+The tradeoff with this pattern is that it does prevent implementing `IntoResponse` specializations for custom application errors. This works best in practice when modeling error responses at the boundary of API handlers, and keeping rendering of error responses explicit other than for internal server errors.
+
+All other response functionality is provided through the `JsonResponse` struct. The handler result type `JsonResult` implements `From<JsonResponse>`, so `JsonResponse` can be returned from a handler with a call to `.into()`.
 
 A handler can return a JSON response for any serializable body:
 
