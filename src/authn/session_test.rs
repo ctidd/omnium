@@ -58,6 +58,7 @@ async fn test_session_header_is_accepted() {
     let claims = create_session(
         "test-user-id",
         &EncodingKey::from_secret(state.session_secret.value.as_bytes()),
+        Duration::from_secs(60),
     );
 
     let app = app(state).into_service();

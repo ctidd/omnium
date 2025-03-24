@@ -104,6 +104,18 @@ fn app(state: Arc<AppOmniumState>) -> Router {
 }
 ```
 
+Create the user session:
+
+```rs
+create_session(
+    "some-user-id",
+    &EncodingKey::from_secret(state.session_secret.value.as_bytes()),
+    Duration::from_secs(60),
+);
+```
+
+A user must pass the session as the `authorization` header, or as the `__Host-session` cookie. For a user-facing web application, you can set the `__Host-session` cookie when the user signs in. If the application shares a session across multiple services on different origins, it can expose the session for use by the client in the `authorization` header for programmatic, cross-origin requests.
+
 Requests from an unauthenticated user will reject with a 401 response.
 
 For an authenticated user, the user object from `user_lookup` can be retrieved from request state to avoid redundant lookup in handlers.

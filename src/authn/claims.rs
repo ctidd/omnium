@@ -24,11 +24,11 @@ pub fn decode_claims<T: for<'a> Deserialize<'a>>(
     Ok(result)
 }
 
-pub fn expires_in(seconds: u64) -> anyhow::Result<usize> {
+pub fn expires_in(duration: Duration) -> anyhow::Result<usize> {
     Ok(usize::try_from(
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)?
-            .add(Duration::from_secs(seconds))
+            .add(duration)
             .as_secs(),
     )?)
 }

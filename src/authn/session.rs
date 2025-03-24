@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::extract::{MatchedPath, State};
 use axum_extra::extract::CookieJar;
 
@@ -30,11 +32,15 @@ pub struct SessionClaims {
     pub omn_cl_typ: String,
 }
 
-pub fn create_session(user_id: &str, encoding_key: &EncodingKey) -> anyhow::Result<String> {
+pub fn create_session(
+    user_id: &str,
+    encoding_key: &EncodingKey,
+    duration: Duration,
+) -> anyhow::Result<String> {
     encode_claims(
         &SessionClaims {
             sub: String::from(user_id),
-            exp: expires_in(60 * 60 * 24 * 14)?, // 2 week expiry
+            exp: expires_in(duration)?,
             omn_cl_typ: SESSION_CLAIMS_TYPE.into(),
         },
         encoding_key,
