@@ -1,72 +1,61 @@
-use anyhow::Error;
 use axum::response::IntoResponse;
 use axum::Json;
 use hyper::{HeaderMap, StatusCode};
+use log::error;
 use serde::{Deserialize, Serialize};
 
-pub type JsonResult = Result<axum::response::Response, JsonResponse<StatusBody>>;
+pub type Result = core::result::Result<axum::response::Response, Response<StatusBody>>;
 
-impl<T> From<JsonResponse<T>> for JsonResult
+impl<T> From<Response<T>> for Result
 where
     T: Serialize,
 {
-    fn from(json: JsonResponse<T>) -> Self {
-        Ok(json.into_response())
+    fn from(response: Response<T>) -> Self {
+        Ok(response.into_response())
     }
 }
 
 #[derive(Debug)]
-pub struct JsonResponse<T>
+pub struct Response<T>
 where
     T: Serialize,
 {
     headers: HeaderMap,
     code: StatusCode,
-    body: Option<T>,
-    internal_server_error: Option<Error>,
+    body: T,
 }
 
-impl<T> JsonResponse<T>
+impl<T> Response<T>
 where
     T: Serialize,
 {
-    pub fn of(code: StatusCode) -> JsonResponse<T>
+    pub fn json(body: T) -> Response<T>
     where
         T: Serialize,
     {
-        JsonResponse {
+        Response {
             headers: HeaderMap::new(),
-            code,
-            body: None,
-            internal_server_error: None,
+            code: StatusCode::OK,
+            body,
         }
     }
 
-    pub fn headers(mut self, headers: HeaderMap) -> Self {
+    pub fn with_headers(mut self, headers: HeaderMap) -> Self {
         self.headers = headers;
         self
     }
 
-    pub fn body(mut self, body: T) -> Self {
-        self.body = Some(body);
-        self
-    }
-
-    pub fn internal_server_error(mut self, error: Error) -> Self {
-        self.internal_server_error = Some(error);
+    pub fn with_status(mut self, code: StatusCode) -> Self {
+        self.code = code;
         self
     }
 }
 
-impl<T> IntoResponse for JsonResponse<T>
+impl<T> IntoResponse for Response<T>
 where
     T: Serialize,
 {
     fn into_response(self) -> axum::response::Response {
-        if self.code == StatusCode::INTERNAL_SERVER_ERROR {
-            println!("Internal server error! {:?}", self.internal_server_error);
-        }
-
         let mut response = (self.code, Json(self.body)).into_response();
 
         for (k, v) in self.headers.iter() {
@@ -92,33 +81,30 @@ impl StatusBody {
     }
 }
 
-impl JsonResponse<StatusBody> {
-    pub fn of_status(code: StatusCode) -> JsonResponse<StatusBody> {
-        JsonResponse {
+impl Response<StatusBody> {
+    pub fn status(code: StatusCode) -> Response<StatusBody> {
+        Response {
             headers: HeaderMap::new(),
             code,
-            body: Some(StatusBody::of(code, None)),
-            internal_server_error: None,
+            body: StatusBody::of(code, None),
         }
     }
 
-    pub fn of_status_detail(code: StatusCode, detail: String) -> JsonResponse<StatusBody> {
-        JsonResponse {
-            headers: HeaderMap::new(),
-            code,
-            body: Some(StatusBody::of(code, Some(detail))),
-            internal_server_error: None,
-        }
+    pub fn with_detail(mut self, detail: String) -> Self {
+        self.body = StatusBody::of(self.code, Some(detail));
+        self
     }
 }
 
-impl<E> From<E> for JsonResponse<StatusBody>
+impl<E> From<E> for Response<StatusBody>
 where
     E: Into<anyhow::Error>,
 {
     fn from(err: E) -> Self {
-        JsonResponse::of(StatusCode::INTERNAL_SERVER_ERROR)
-            .internal_server_error(err.into())
-            .body(StatusBody::of(StatusCode::INTERNAL_SERVER_ERROR, None))
+        let err: anyhow::Error = err.into();
+        error!("Responding with internal server error! {:?}", err);
+
+        Response::json(StatusBody::of(StatusCode::INTERNAL_SERVER_ERROR, None))
+            .with_status(StatusCode::INTERNAL_SERVER_ERROR)
     }
 }

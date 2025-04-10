@@ -13,9 +13,9 @@ use tower::ServiceExt;
 
 use crate::api::responses::StatusBody;
 use crate::security::claims::encode_claims;
-use crate::security::secrets::{create_service_secret, OmniumServiceSecret};
+use crate::security::secrets::{create_service_secret, ServiceSecret};
 use crate::security::session::{
-    authenticate, create_session, OmniumState, SessionClaims, SESSION_CLAIMS_TYPE,
+    authenticate, create_session, SessionClaims, SessionState, SESSION_CLAIMS_TYPE,
 };
 
 #[derive(Clone)]
@@ -24,11 +24,11 @@ struct FakeUser {
 }
 
 struct FakeOmniumState {
-    pub service_secret: OmniumServiceSecret,
+    pub service_secret: ServiceSecret,
 }
 
-impl OmniumState<FakeUser> for Arc<FakeOmniumState> {
-    async fn service_secret(&self) -> anyhow::Result<&OmniumServiceSecret> {
+impl SessionState<FakeUser> for Arc<FakeOmniumState> {
+    async fn service_secret(&self) -> anyhow::Result<&ServiceSecret> {
         Ok(&self.service_secret)
     }
 
@@ -242,8 +242,6 @@ async fn test_missing_session_header_is_rejected() {
         )
         .await
         .unwrap();
-
-    println!("{:#?}", response);
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 

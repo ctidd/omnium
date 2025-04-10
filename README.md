@@ -4,50 +4,53 @@ A set of extensions for building web applications on axum.
 
 ## api
 
-The `api` module provides a set of response conventions for axum handlers, implementing `IntoResponse` for typical use cases.
+The `api::responses` module provides a set of response conventions for axum handlers, implementing axum's `IntoResponse` trait for typical use cases.
 
-A handler returns `JsonResult`, which represents HTTP responses on the `Ok(...)` arm regardless of status code:
+A handler returns `responses::Result`, which represents HTTP responses on the `Ok(...)` arm regardless of status code:
 
 ```rs
-async fn handler() -> JsonResult {
+// ...
+use omnium::api::responses::{Result, Response};
+
+async fn handler() -> Result {
     let result = try_do_or_err().await;
     match result {
-        Ok => JsonResponse.of_status(StatusCode::ACCEPTED).into()
-        Err => JsonResponse.of_status(StatusCode::CONFLICT).into()
+        Ok => Response.status(StatusCode::ACCEPTED).into()
+        Err => Response.status(StatusCode::CONFLICT).into()
     }
 }
 ```
 
-Response conventions are provided through the `JsonResponse` struct. The handler result type `JsonResult` implements `From<JsonResponse>`, so `JsonResponse` can be returned from a handler with a call to `.into()`.
+Response conventions are provided through the `responses::Response` struct. The handler result type `responses::Result` implements `From<responses::Response>`, so `responses::Response` can be returned from a handler with a call to `.into()`.
 
-A handler can return a JSON response for any serializable body:
+A handler can return a JSON response for any serializable body, with a default `OK` status:
 
 ```rs
-async fn handler() -> JsonResult {
-    JsonResponse.of(StatusCode::OK).body(body).into()
+async fn handler() -> Result {
+    Response.json(body).with_status(StatusCode::IM_A_TEAPOT).into()
 }
 ```
 
-A handler can return a simple status response, deriving a response body as appropriate for the status:
+A handler can return a simple status response, implicitly deriving a response body as appropriate for the status:
 
 ```rs
-async fn handler() -> JsonResult {
-    JsonResponse.of_status(StatusCode::OK).into()
+async fn handler() -> Result {
+    Response.status(StatusCode::OK).into()
 }
 ```
 
 An additional detail message can be added to the status response body:
 
 ```rs
-async fn handler() -> JsonResult {
-    JsonResponse.of_status_detail(StatusCode::OK, "Additional detail".into()).into()
+async fn handler() -> Result {
+    Response.status(StatusCode::OK).with_detail("Additional detail".into()).into()
 }
 ```
 
 Finally, the `Err` arm is used to handle internal server errors. A handler can return `Into<anyhow::Error>`, which will be rendered as an `INTERNAL_SERVER_ERROR` response:
 
 ```rs
-async fn handler() -> JsonResult {
+async fn handler() -> Result {
     let success = try_do_or_err().await?;
     // ...
 }
@@ -72,12 +75,12 @@ Configure authentication middleware:
 #[derive(Clone)]
 struct AppUser {}
 
-struct AppOmniumState {
-    pub service_secret: OmniumSessionSecret,
+struct ExampleSessionState {
+    pub service_secret: ServiceSecret,
 }
 
-impl OmniumState<AppUser> for Arc<AppOmniumState> {
-    async fn service_secret(&self) -> anyhow::Result<&OmniumSessionSecret> {
+impl SessionState<AppUser> for Arc<ExampleSessionState> {
+    async fn service_secret(&self) -> anyhow::Result<&ServiceSecret> {
         // Return secret from application secret manager:
         Ok(&self.service_secret)
     }
@@ -93,12 +96,12 @@ impl OmniumState<AppUser> for Arc<AppOmniumState> {
 Attach authentication middleware:
 
 ```rs
-fn app(state: Arc<AppOmniumState>) -> Router {
+fn app(state: Arc<ExampleSessionState>) -> Router {
     Router::new()
         .route("/api/user", get(|| async { "Hello, user!" }))
         .layer(from_fn_with_state(
             state.clone(),
-            authenticate::<AppUser, Arc<AppOmniumState>>,
+            authenticate::<AppUser, Arc<ExampleSessionState>>,
         ))
         .with_state(state)
 }
@@ -114,11 +117,11 @@ create_session(
 );
 ```
 
-A user must pass the session as the `authorization` header, or as the `__Host-session` cookie. For a user-facing web application, you can set the `__Host-session` cookie when the user signs in. If the application shares a session across multiple services on different origins, it can expose the session for use by the client in the `authorization` header for programmatic, cross-origin requests.
+A user must pass the session as the `authorization` header, or as the `__Host-omn-sess` cookie. For a simple, user-facing web application, you can set the `__Host-omn-sess` cookie when the user signs in, in order to authenticate requests to the service running on the same origin. If the application shares a session across multiple services on different origins, it can expose the session for use by the client in the `authorization` header for programmatic, cross-origin requests.
 
 Requests from an unauthenticated user will reject with a 401 response.
 
-For an authenticated user, the user object from `user_lookup` can be retrieved from request state to avoid redundant lookup in handlers.
+For an authenticated user, the user object from `user_lookup` can be retrieved from request state to avoid redundant lookup in handlers:
 
 ```rs
 pub async fn handler(

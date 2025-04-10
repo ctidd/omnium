@@ -3,14 +3,13 @@ use std::fmt::Debug;
 use anyhow::anyhow;
 use axum::body::Body;
 use axum::http::{Method, Request};
-use axum::response::Response;
 use axum::{routing::MethodRouter, Router};
 use http_body_util::BodyExt;
 use hyper::StatusCode;
 use serde::Deserialize;
 use tower::util::ServiceExt;
 
-use crate::api::responses::{JsonResponse, JsonResult, StatusBody};
+use crate::api::responses::{Response, Result, StatusBody};
 
 fn input() -> hyper::Request<axum::body::Body> {
     Request::builder()
@@ -21,7 +20,7 @@ fn input() -> hyper::Request<axum::body::Body> {
 }
 
 async fn assert_response<T: for<'a> Deserialize<'a> + PartialEq + Debug>(
-    response: Response<Body>,
+    response: axum::response::Response<Body>,
     expect_code: StatusCode,
     expect_body: T,
 ) {
@@ -34,7 +33,7 @@ async fn assert_response<T: for<'a> Deserialize<'a> + PartialEq + Debug>(
 }
 
 async fn assert_status_response(
-    response: Response<Body>,
+    response: axum::response::Response<Body>,
     expect_code: StatusCode,
     expect_detail: Option<String>,
 ) {
@@ -54,8 +53,8 @@ async fn assert_status_response(
 
 #[tokio::test]
 async fn test_ok_status_to_response() {
-    async fn handler() -> JsonResult {
-        JsonResponse::of_status(StatusCode::OK).into()
+    async fn handler() -> Result {
+        Response::status(StatusCode::OK).into()
     }
 
     let response = Router::new()
@@ -72,8 +71,8 @@ async fn test_ok_status_to_response() {
 
 #[tokio::test]
 async fn test_err_status_to_response() {
-    async fn handler() -> JsonResult {
-        JsonResponse::of_status(StatusCode::UNAUTHORIZED).into()
+    async fn handler() -> Result {
+        Response::status(StatusCode::UNAUTHORIZED).into()
     }
 
     let response = Router::new()
@@ -88,8 +87,9 @@ async fn test_err_status_to_response() {
 
 #[tokio::test]
 async fn test_status_with_detail_to_response() {
-    async fn handler() -> JsonResult {
-        JsonResponse::of_status_detail(StatusCode::UNAUTHORIZED, "You shall not pass!".into())
+    async fn handler() -> Result {
+        Response::status(StatusCode::UNAUTHORIZED)
+            .with_detail("You shall not pass!".into())
             .into()
     }
 
@@ -110,7 +110,7 @@ async fn test_status_with_detail_to_response() {
 
 #[tokio::test]
 async fn test_bail_to_response() {
-    async fn handler() -> JsonResult {
+    async fn handler() -> Result {
         Err(anyhow!("An unhandled error was propagated!"))?;
         panic!("This line will never be reached.");
     }
@@ -127,13 +127,13 @@ async fn test_bail_to_response() {
 
 #[tokio::test]
 async fn test_json_to_response() {
-    async fn handler() -> JsonResult {
-        JsonResponse::of(StatusCode::IM_A_TEAPOT)
-            .body(StatusBody {
-                reason: Some("test".into()),
-                detail: Some("content".into()),
-            })
-            .into()
+    async fn handler() -> Result {
+        Response::json(StatusBody {
+            reason: Some("test".into()),
+            detail: Some("content".into()),
+        })
+        .with_status(StatusCode::IM_A_TEAPOT)
+        .into()
     }
 
     let response = Router::new()

@@ -5,19 +5,20 @@ use axum_extra::extract::CookieJar;
 
 use axum::{extract::Request, http::StatusCode, middleware::Next};
 use jsonwebtoken::{DecodingKey, EncodingKey};
+use log::info;
 use serde::{Deserialize, Serialize};
 
-use crate::api::responses::{JsonResponse, JsonResult};
+use crate::api::responses::{Response, Result};
 use crate::security::claims::decode_claims;
 use crate::security::claims::{encode_claims, expires_in};
-use crate::security::secrets::OmniumServiceSecret;
+use crate::security::secrets::ServiceSecret;
 
 pub const SESSION_CLAIMS_TYPE: &str = "session";
 
-pub trait OmniumState<U> {
+pub trait SessionState<U> {
     fn service_secret(
         &self,
-    ) -> impl std::future::Future<Output = anyhow::Result<&OmniumServiceSecret>> + Send;
+    ) -> impl std::future::Future<Output = anyhow::Result<&ServiceSecret>> + Send;
 
     fn user_lookup(
         &self,
@@ -47,21 +48,21 @@ pub fn create_session(
     )
 }
 
-pub async fn authenticate<U: Clone + Send + Sync + 'static, S: OmniumState<U>>(
+pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionState<U>>(
     State(state): State<S>,
     cookies: CookieJar,
     mut request: Request,
     next: Next,
-) -> JsonResult {
+) -> Result {
     let path = request.extensions().get::<MatchedPath>();
     match path {
-        Some(path) => println!("Authorizing path: {}", path.as_str()),
-        None => println!("Authorizing path: {}", "No matched path"),
+        Some(path) => info!("Authorizing path: {}", path.as_str()),
+        None => info!("Authorizing path: {}", "No matched path"),
     }
 
     // Extract credential from either session cookie or authorization header:
     let credential = cookies
-        .get("__Host-session")
+        .get("__Host-omn-sess")
         .and_then(|cookie| Some(cookie.value_trimmed()))
         .or_else(|| {
             request
@@ -77,8 +78,8 @@ pub async fn authenticate<U: Clone + Send + Sync + 'static, S: OmniumState<U>>(
             &DecodingKey::from_secret(state.service_secret().await?.value.as_bytes()),
         ) {
             if decoded.claims.omn_cl_typ != SESSION_CLAIMS_TYPE {
-                println!("Authentication rejected! Illegal claims type.");
-                return JsonResponse::of_status(StatusCode::UNAUTHORIZED).into();
+                info!("Authentication rejected! Illegal claims type.");
+                return Response::status(StatusCode::UNAUTHORIZED).into();
             }
 
             let user_id = decoded.claims.sub;
@@ -88,20 +89,20 @@ pub async fn authenticate<U: Clone + Send + Sync + 'static, S: OmniumState<U>>(
             match lookup {
                 Some(user) => {
                     request.extensions_mut().insert::<U>(user);
-                    println!("Inserted user to request extensions...");
+                    info!("Inserted user to request extensions...");
                 }
                 None => {
-                    println!("Authentication rejected! User lookup returned no result.");
-                    return JsonResponse::of_status(StatusCode::UNAUTHORIZED).into();
+                    info!("Authentication rejected! User lookup returned no result.");
+                    return Response::status(StatusCode::UNAUTHORIZED).into();
                 }
             }
         } else {
-            println!("Authentication rejected! Unable to decode claims from credential.");
-            return JsonResponse::of_status(StatusCode::UNAUTHORIZED).into();
+            info!("Authentication rejected! Unable to decode claims from credential.");
+            return Response::status(StatusCode::UNAUTHORIZED).into();
         }
     } else {
-        println!("Authentication rejected! No credential in request.");
-        return JsonResponse::of_status(StatusCode::UNAUTHORIZED).into();
+        info!("Authentication rejected! No credential in request.");
+        return Response::status(StatusCode::UNAUTHORIZED).into();
     }
 
     Ok(next.run(request).await)
