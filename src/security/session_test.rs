@@ -7,6 +7,7 @@ use axum::http::{Method, Request, StatusCode};
 use axum::middleware::from_fn_with_state;
 use axum::Extension;
 use axum::{routing::get, Router};
+use axum_extra::extract::CookieJar;
 use http_body_util::BodyExt;
 use jsonwebtoken::EncodingKey;
 use tower::ServiceExt;
@@ -15,7 +16,7 @@ use crate::api::responses::StatusBody;
 use crate::security::claims::encode_claims;
 use crate::security::secrets::{create_service_secret, ServiceSecret};
 use crate::security::session::{
-    authenticate, create_session, SessionClaims, SessionState, SESSION_CLAIMS_TYPE,
+    authenticate, create_session, Credential, SessionClaims, SessionState, SESSION_CLAIMS_TYPE,
 };
 
 #[derive(Clone)]
@@ -36,6 +37,14 @@ impl SessionState<FakeUser> for Arc<FakeOmniumState> {
         Ok(Some(FakeUser {
             name: "Test User".into(),
         }))
+    }
+
+    fn extract_credential(
+        &self,
+        request: &axum::extract::Request,
+        _cookies: &CookieJar,
+    ) -> Option<Credential> {
+        Credential::from_authorization_header(request)
     }
 }
 

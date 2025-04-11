@@ -24,6 +24,8 @@ pub trait SessionState<U> {
         &self,
         user_id: String,
     ) -> impl std::future::Future<Output = anyhow::Result<Option<U>>> + Send;
+
+    fn extract_credential(&self, request: &Request, cookies: &CookieJar) -> Option<Credential>;
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -48,6 +50,26 @@ pub fn create_session(
     )
 }
 
+#[derive(Clone)]
+pub struct Credential(String);
+
+impl Credential {
+    pub fn from_authorization_header(request: &Request) -> Option<Credential> {
+        request
+            .headers()
+            .get("authorization")
+            .and_then(|header| header.to_str().ok())
+            .map(|header| Credential(header.into()))
+    }
+
+    pub fn from_cookie(cookies: &CookieJar) -> Option<Credential> {
+        cookies
+            .get("__Host-omn-sess")
+            .and_then(|cookie| Some(cookie.value_trimmed()))
+            .map(|header| Credential(header.into()))
+    }
+}
+
 pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionState<U>>(
     State(state): State<S>,
     cookies: CookieJar,
@@ -61,15 +83,9 @@ pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionState<U>>(
     }
 
     // Extract credential from either session cookie or authorization header:
-    let credential = cookies
-        .get("__Host-omn-sess")
-        .and_then(|cookie| Some(cookie.value_trimmed()))
-        .or_else(|| {
-            request
-                .headers()
-                .get("authorization")
-                .and_then(|header| header.to_str().ok())
-        });
+    let credential = state
+        .extract_credential(&request, &cookies)
+        .map(|credential| credential.0);
 
     // Authenticate using the credential:
     if let Some(credential) = credential {

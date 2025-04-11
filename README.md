@@ -61,7 +61,7 @@ This error handling convention is provided by an implementation of `IntoResponse
 
 ## security
 
-The `security` module provides JWT-based authentication middleware, supporting both a cookie and the `authorization` header for browser-based or programmatic authentication.
+The `security` module provides JWT-based authentication middleware, with utilities for a cookie-based credential exchange or the `authorization` header for browser-based or programmatic authentication.
 
 Create a service secret:
 
@@ -90,6 +90,10 @@ impl SessionState<AppUser> for Arc<ExampleSessionState> {
         // Return user from application: database:
         Ok(Some(AppUser {}))
     }
+
+    fn extract_credential(&self, request: &Request, _cookies: &CookieJar) -> Option<Credential> {
+        Credential::from_authorization_header(&request)
+    }
 }
 ```
 
@@ -117,7 +121,7 @@ create_session(
 );
 ```
 
-A user must pass the session as the `authorization` header, or as the `__Host-omn-sess` cookie. For a simple, user-facing web application, you can set the `__Host-omn-sess` cookie when the user signs in, in order to authenticate requests to the service running on the same origin. If the application shares a session across multiple services on different origins, it can expose the session for use by the client in the `authorization` header for programmatic, cross-origin requests.
+With `Credential::from_authorization_header`, a client may pass the session as the `authorization` header. With `Credential::from_cookie`, a client may pass the session as the `__Host-omn-sess` cookie. For a simple, user-facing web application, you can set the `__Host-omn-sess` cookie when the user signs in, in order to authenticate requests to the service running on the same origin. If the application shares a session across multiple services on different origins, it can expose the session for use by the client in the `authorization` header for programmatic, cross-origin requests. You can plug in your own handling for extracting credentials from requests with a custom `extract_credential` handler.
 
 Requests from an unauthenticated user will reject with a 401 response.
 
