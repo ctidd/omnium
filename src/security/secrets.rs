@@ -3,7 +3,7 @@ use ring::rand::{self, SecureRandom};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ServiceSecret {
     pub value: String,
 }
