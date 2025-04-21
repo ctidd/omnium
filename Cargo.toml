@@ -1,5 +1,7 @@
 [package]
 name = "omnium"
+description = "A set of extensions for building web applications on axum."
+license = "MIT"
 version = "0.1.0"
 edition = "2021"
 
