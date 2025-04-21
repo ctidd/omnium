@@ -2,6 +2,8 @@
 
 A set of extensions for building web applications on axum.
 
+**Unstable:** This crate is not ready for use. The author is building out these extensions to iterate on a proof of concept, and the surface may change frequently.
+
 ## api
 
 The `api::responses` module provides a set of response conventions for axum handlers, implementing axum's `IntoResponse` trait for typical use cases.
