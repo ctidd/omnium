@@ -77,23 +77,24 @@ Configure authentication middleware:
 #[derive(Clone)]
 struct AppUser {}
 
-struct ExampleSessionState {
+struct AppState {
     pub service_secret: ServiceSecret,
 }
 
-impl SessionState<AppUser> for Arc<ExampleSessionState> {
-    async fn service_secret(&self) -> anyhow::Result<&ServiceSecret> {
+impl SessionManager<AppUser> for Arc<AppState> {
+    async fn get_service_secret(&self) -> anyhow::Result<&ServiceSecret> {
         // Return secret from application secret manager:
         Ok(&self.service_secret)
     }
 
 
-    async fn user_lookup(&self, _user_id: String) -> anyhow::Result<Option<AppUser>> {
-        // Return user from application: database:
+    async fn get_user(&self, _user_id: String) -> anyhow::Result<Option<AppUser>> {
+        // Return user from application database:
         Ok(Some(AppUser {}))
     }
 
     fn extract_credential(&self, request: &Request, _cookies: &CookieJar) -> Option<Credential> {
+        // Extract credential from request:
         Credential::from_authorization_header(&request)
     }
 }
@@ -102,12 +103,12 @@ impl SessionState<AppUser> for Arc<ExampleSessionState> {
 Attach authentication middleware:
 
 ```rs
-fn app(state: Arc<ExampleSessionState>) -> Router {
+fn app(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/api/user", get(|| async { "Hello, user!" }))
         .layer(from_fn_with_state(
             state.clone(),
-            authenticate::<AppUser, Arc<ExampleSessionState>>,
+            authenticate::<AppUser, Arc<AppState>>,
         ))
         .with_state(state)
 }

@@ -15,12 +15,12 @@ use crate::security::secrets::ServiceSecret;
 
 pub const SESSION_CLAIMS_TYPE: &str = "session";
 
-pub trait SessionState<U> {
-    fn service_secret(
+pub trait SessionManager<U> {
+    fn get_service_secret(
         &self,
     ) -> impl std::future::Future<Output = anyhow::Result<&ServiceSecret>> + Send;
 
-    fn user_lookup(
+    fn get_user(
         &self,
         user_id: String,
     ) -> impl std::future::Future<Output = anyhow::Result<Option<U>>> + Send;
@@ -70,8 +70,8 @@ impl Credential {
     }
 }
 
-pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionState<U>>(
-    State(state): State<S>,
+pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionManager<U>>(
+    State(session_manager): State<S>,
     cookies: CookieJar,
     mut request: Request,
     next: Next,
@@ -83,7 +83,7 @@ pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionState<U>>(
     }
 
     // Extract credential from either session cookie or authorization header:
-    let credential = state
+    let credential = session_manager
         .extract_credential(&request, &cookies)
         .map(|credential| credential.0);
 
@@ -91,7 +91,7 @@ pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionState<U>>(
     if let Some(credential) = credential {
         if let Ok(decoded) = decode_claims::<SessionClaims>(
             &credential,
-            &DecodingKey::from_secret(state.service_secret().await?.value.as_bytes()),
+            &DecodingKey::from_secret(session_manager.get_service_secret().await?.value.as_bytes()),
         ) {
             if decoded.claims.omn_cl_typ != SESSION_CLAIMS_TYPE {
                 info!("Authentication rejected! Illegal claims type.");
@@ -100,7 +100,7 @@ pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionState<U>>(
 
             let user_id = decoded.claims.sub;
 
-            let lookup = state.user_lookup(user_id).await?;
+            let lookup = session_manager.get_user(user_id).await?;
 
             match lookup {
                 Some(user) => {

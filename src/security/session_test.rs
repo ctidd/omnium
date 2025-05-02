@@ -16,7 +16,7 @@ use crate::api::responses::StatusBody;
 use crate::security::claims::encode_claims;
 use crate::security::secrets::{create_service_secret, ServiceSecret};
 use crate::security::session::{
-    authenticate, create_session, Credential, SessionClaims, SessionState, SESSION_CLAIMS_TYPE,
+    authenticate, create_session, Credential, SessionClaims, SessionManager, SESSION_CLAIMS_TYPE,
 };
 
 #[derive(Clone)]
@@ -24,16 +24,16 @@ struct FakeUser {
     name: String,
 }
 
-struct FakeOmniumState {
+struct FakeAppState {
     pub service_secret: ServiceSecret,
 }
 
-impl SessionState<FakeUser> for Arc<FakeOmniumState> {
-    async fn service_secret(&self) -> anyhow::Result<&ServiceSecret> {
+impl SessionManager<FakeUser> for Arc<FakeAppState> {
+    async fn get_service_secret(&self) -> anyhow::Result<&ServiceSecret> {
         Ok(&self.service_secret)
     }
 
-    async fn user_lookup(&self, _user_id: String) -> anyhow::Result<Option<FakeUser>> {
+    async fn get_user(&self, _user_id: String) -> anyhow::Result<Option<FakeUser>> {
         Ok(Some(FakeUser {
             name: "Test User".into(),
         }))
@@ -48,13 +48,13 @@ impl SessionState<FakeUser> for Arc<FakeOmniumState> {
     }
 }
 
-fn fake_app_state() -> Arc<FakeOmniumState> {
-    Arc::new(FakeOmniumState {
+fn fake_app_state() -> Arc<FakeAppState> {
+    Arc::new(FakeAppState {
         service_secret: create_service_secret().unwrap(),
     })
 }
 
-fn app(state: Arc<FakeOmniumState>) -> Router {
+fn app(state: Arc<FakeAppState>) -> Router {
     Router::new()
         .route(
             "/api/user",
@@ -64,7 +64,7 @@ fn app(state: Arc<FakeOmniumState>) -> Router {
         )
         .layer(from_fn_with_state(
             state.clone(),
-            authenticate::<FakeUser, Arc<FakeOmniumState>>,
+            authenticate::<FakeUser, Arc<FakeAppState>>,
         ))
         .with_state(state)
 }
