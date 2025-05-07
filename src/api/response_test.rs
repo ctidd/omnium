@@ -9,7 +9,7 @@ use hyper::StatusCode;
 use serde::Deserialize;
 use tower::util::ServiceExt;
 
-use crate::api::responses::{Response, Result, StatusBody};
+use crate::api::response::{JsonResponse, JsonResult, JsonStatusBody};
 
 fn input() -> hyper::Request<axum::body::Body> {
     Request::builder()
@@ -40,11 +40,11 @@ async fn assert_status_response(
     assert_eq!(response.status(), expect_code);
 
     let body = response.into_body().collect().await.unwrap().to_bytes();
-    let body: StatusBody = serde_json::from_slice(&body).unwrap();
+    let body: JsonStatusBody = serde_json::from_slice(&body).unwrap();
 
     assert_eq!(
         body,
-        StatusBody {
+        JsonStatusBody {
             reason: expect_code.canonical_reason().map(String::from),
             detail: expect_detail,
         },
@@ -53,8 +53,8 @@ async fn assert_status_response(
 
 #[tokio::test]
 async fn test_ok_status_to_response() {
-    async fn handler() -> Result {
-        Response::status(StatusCode::OK).into()
+    async fn handler() -> JsonResult {
+        JsonResponse::of_status(StatusCode::OK).into()
     }
 
     let response = Router::new()
@@ -71,8 +71,8 @@ async fn test_ok_status_to_response() {
 
 #[tokio::test]
 async fn test_err_status_to_response() {
-    async fn handler() -> Result {
-        Response::status(StatusCode::UNAUTHORIZED).into()
+    async fn handler() -> JsonResult {
+        JsonResponse::of_status(StatusCode::UNAUTHORIZED).into()
     }
 
     let response = Router::new()
@@ -87,8 +87,8 @@ async fn test_err_status_to_response() {
 
 #[tokio::test]
 async fn test_status_with_detail_to_response() {
-    async fn handler() -> Result {
-        Response::status(StatusCode::UNAUTHORIZED)
+    async fn handler() -> JsonResult {
+        JsonResponse::of_status(StatusCode::UNAUTHORIZED)
             .with_detail("You shall not pass!".into())
             .into()
     }
@@ -110,7 +110,7 @@ async fn test_status_with_detail_to_response() {
 
 #[tokio::test]
 async fn test_bail_to_response() {
-    async fn handler() -> Result {
+    async fn handler() -> JsonResult {
         Err(anyhow!("An unhandled error was propagated!"))?;
         panic!("This line will never be reached.");
     }
@@ -127,8 +127,8 @@ async fn test_bail_to_response() {
 
 #[tokio::test]
 async fn test_json_to_response() {
-    async fn handler() -> Result {
-        Response::json(StatusBody {
+    async fn handler() -> JsonResult {
+        JsonResponse::of_json(JsonStatusBody {
             reason: Some("test".into()),
             detail: Some("content".into()),
         })
@@ -146,7 +146,7 @@ async fn test_json_to_response() {
     assert_response(
         response,
         StatusCode::IM_A_TEAPOT,
-        StatusBody {
+        JsonStatusBody {
             reason: Some("test".into()),
             detail: Some("content".into()),
         },

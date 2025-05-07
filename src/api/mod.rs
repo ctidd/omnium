@@ -1,3 +1,3 @@
-pub mod responses;
+pub mod response;
 #[cfg(test)]
-mod responses_test;
+mod response_test;

@@ -8,28 +8,28 @@ A set of extensions for building web applications on axum.
 
 The `api::responses` module provides a set of response conventions for axum handlers, implementing axum's `IntoResponse` trait for typical use cases.
 
-A handler returns `responses::Result`, which represents HTTP responses on the `Ok(...)` arm regardless of status code:
+A handler returns `responses::JsonResult`, which represents HTTP responses on the `Ok(...)` arm regardless of status code:
 
 ```rs
 // ...
-use omnium::api::responses::{Result, Response};
+use omnium::api::responses::{JsonResult, JsonResponse};
 
-async fn handler() -> Result {
+async fn handler() -> JsonResult {
     let result = try_do_or_err().await;
     match result {
-        Ok => Response.status(StatusCode::ACCEPTED).into()
-        Err => Response.status(StatusCode::CONFLICT).into()
+        Ok => JsonResponse::of_status(StatusCode::ACCEPTED).into()
+        Err => JsonResponse::of_status(StatusCode::CONFLICT).into()
     }
 }
 ```
 
-Response conventions are provided through the `responses::Response` struct. The handler result type `responses::Result` implements `From<responses::Response>`, so `responses::Response` can be returned from a handler with a call to `.into()`.
+Response conventions are provided through the `responses::JsonResponse` struct. The handler result type `responses::JsonResult` implements `From<responses::JsonResponse>`, so `responses::JsonResponse` can be returned from a handler with a call to `.into()`.
 
 A handler can return a JSON response for any serializable body, with a default `OK` status:
 
 ```rs
 async fn handler() -> Result {
-    Response.json(body).with_status(StatusCode::IM_A_TEAPOT).into()
+    JsonResponse::of_json(body).with_status(StatusCode::IM_A_TEAPOT).into()
 }
 ```
 
@@ -37,7 +37,7 @@ A handler can return a simple status response, implicitly deriving a response bo
 
 ```rs
 async fn handler() -> Result {
-    Response.status(StatusCode::OK).into()
+    JsonResponse::of_status(StatusCode::OK).into()
 }
 ```
 
@@ -45,7 +45,7 @@ An additional detail message can be added to the status response body:
 
 ```rs
 async fn handler() -> Result {
-    Response.status(StatusCode::OK).with_detail("Additional detail".into()).into()
+    JsonResponse::of_status(StatusCode::OK).with_detail("Additional detail".into()).into()
 }
 ```
 

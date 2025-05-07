@@ -8,7 +8,7 @@ use jsonwebtoken::{DecodingKey, EncodingKey};
 use log::info;
 use serde::{Deserialize, Serialize};
 
-use crate::api::responses::{Response, Result};
+use crate::api::response::{JsonResponse, JsonResult};
 use crate::security::claims::decode_claims;
 use crate::security::claims::{encode_claims, expires_in};
 use crate::security::secrets::ServiceSecret;
@@ -75,7 +75,7 @@ pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionManager<U>
     cookies: CookieJar,
     mut request: Request,
     next: Next,
-) -> Result {
+) -> JsonResult {
     let path = request.extensions().get::<MatchedPath>();
     match path {
         Some(path) => info!("Authorizing path: {}", path.as_str()),
@@ -95,7 +95,7 @@ pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionManager<U>
         ) {
             if decoded.claims.omn_cl_typ != SESSION_CLAIMS_TYPE {
                 info!("Authentication rejected! Illegal claims type.");
-                return Response::status(StatusCode::UNAUTHORIZED).into();
+                return JsonResponse::of_status(StatusCode::UNAUTHORIZED).into();
             }
 
             let user_id = decoded.claims.sub;
@@ -109,16 +109,16 @@ pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionManager<U>
                 }
                 None => {
                     info!("Authentication rejected! User lookup returned no result.");
-                    return Response::status(StatusCode::UNAUTHORIZED).into();
+                    return JsonResponse::of_status(StatusCode::UNAUTHORIZED).into();
                 }
             }
         } else {
             info!("Authentication rejected! Unable to decode claims from credential.");
-            return Response::status(StatusCode::UNAUTHORIZED).into();
+            return JsonResponse::of_status(StatusCode::UNAUTHORIZED).into();
         }
     } else {
         info!("Authentication rejected! No credential in request.");
-        return Response::status(StatusCode::UNAUTHORIZED).into();
+        return JsonResponse::of_status(StatusCode::UNAUTHORIZED).into();
     }
 
     Ok(next.run(request).await)

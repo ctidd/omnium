@@ -4,19 +4,19 @@ use hyper::{HeaderMap, StatusCode};
 use log::error;
 use serde::{Deserialize, Serialize};
 
-pub type Result = core::result::Result<axum::response::Response, Response<StatusBody>>;
+pub type JsonResult = core::result::Result<axum::response::Response, JsonResponse<JsonStatusBody>>;
 
-impl<T> From<Response<T>> for Result
+impl<T> From<JsonResponse<T>> for JsonResult
 where
     T: Serialize,
 {
-    fn from(response: Response<T>) -> Self {
+    fn from(response: JsonResponse<T>) -> Self {
         Ok(response.into_response())
     }
 }
 
 #[derive(Debug)]
-pub struct Response<T>
+pub struct JsonResponse<T>
 where
     T: Serialize,
 {
@@ -25,15 +25,15 @@ where
     body: T,
 }
 
-impl<T> Response<T>
+impl<T> JsonResponse<T>
 where
     T: Serialize,
 {
-    pub fn json(body: T) -> Response<T>
+    pub fn of_json(body: T) -> JsonResponse<T>
     where
         T: Serialize,
     {
-        Response {
+        JsonResponse {
             headers: HeaderMap::new(),
             code: StatusCode::OK,
             body,
@@ -51,7 +51,7 @@ where
     }
 }
 
-impl<T> IntoResponse for Response<T>
+impl<T> IntoResponse for JsonResponse<T>
 where
     T: Serialize,
 {
@@ -67,44 +67,44 @@ where
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct StatusBody {
+pub struct JsonStatusBody {
     pub reason: Option<String>,
     pub detail: Option<String>,
 }
 
-impl StatusBody {
-    pub fn of(code: StatusCode, detail: Option<String>) -> StatusBody {
-        StatusBody {
+impl JsonStatusBody {
+    pub fn of(code: StatusCode, detail: Option<String>) -> JsonStatusBody {
+        JsonStatusBody {
             reason: code.canonical_reason().map(String::from),
             detail,
         }
     }
 }
 
-impl Response<StatusBody> {
-    pub fn status(code: StatusCode) -> Response<StatusBody> {
-        Response {
+impl JsonResponse<JsonStatusBody> {
+    pub fn of_status(code: StatusCode) -> JsonResponse<JsonStatusBody> {
+        JsonResponse {
             headers: HeaderMap::new(),
             code,
-            body: StatusBody::of(code, None),
+            body: JsonStatusBody::of(code, None),
         }
     }
 
     pub fn with_detail(mut self, detail: String) -> Self {
-        self.body = StatusBody::of(self.code, Some(detail));
+        self.body = JsonStatusBody::of(self.code, Some(detail));
         self
     }
 }
 
-impl<E> From<E> for Response<StatusBody>
+impl<E> From<E> for JsonResponse<JsonStatusBody>
 where
     E: Into<anyhow::Error>,
 {
     fn from(err: E) -> Self {
         let err: anyhow::Error = err.into();
-        error!("Responding with internal server error! {:?}", err);
+        error!("Internal error! {:?}", err);
 
-        Response::json(StatusBody::of(StatusCode::INTERNAL_SERVER_ERROR, None))
+        JsonResponse::of_json(JsonStatusBody::of(StatusCode::INTERNAL_SERVER_ERROR, None))
             .with_status(StatusCode::INTERNAL_SERVER_ERROR)
     }
 }
