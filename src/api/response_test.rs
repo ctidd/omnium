@@ -126,6 +126,31 @@ async fn test_bail_to_response() {
 }
 
 #[tokio::test]
+async fn test_map_err_to_response() {
+    async fn handler() -> JsonResult {
+        Err(anyhow!("An error to be handled!")).map_err(|_| {
+            JsonResponse::of_status(StatusCode::IM_A_TEAPOT)
+                .with_detail("Handled with detail.".into())
+        })?;
+        panic!("This line will never be reached.");
+    }
+
+    let response = Router::new()
+        .route("/test", MethodRouter::new().get(handler))
+        .into_service()
+        .oneshot(input())
+        .await
+        .unwrap();
+
+    assert_status_response(
+        response,
+        StatusCode::IM_A_TEAPOT,
+        Some("Handled with detail.".into()),
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn test_json_to_response() {
     async fn handler() -> JsonResult {
         JsonResponse::of_json(JsonStatusBody {
