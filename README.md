@@ -8,11 +8,13 @@ A set of extensions for building web applications on axum.
 
 The `api::responses` module provides a set of response conventions for axum handlers, implementing axum's `IntoResponse` trait for typical use cases.
 
-A handler returns `responses::JsonResult`, which represents HTTP responses on the `Ok(...)` arm regardless of status code:
+A handler returns `JsonResult` or `TypedJsonResult<T>`, where `JsonResult` can be used for type-erased responses and `TypedJsonResult<T>` can be used for consistently-typed responses.
+
+The `Ok(...)` arm on these types can be used regardless of status code, to return custom responses:
 
 ```rs
 // ...
-use omnium::api::responses::{JsonResult, JsonResponse};
+use omnium::api::{JsonResult, JsonResponse};
 
 async fn handler() -> JsonResult {
     let result = try_do_or_err().await;
@@ -23,43 +25,66 @@ async fn handler() -> JsonResult {
 }
 ```
 
-Response conventions are provided through the `responses::JsonResponse` struct. The handler result type `responses::JsonResult` implements `From<responses::JsonResponse>`, so `responses::JsonResponse` can be returned from a handler with a call to `.into()`.
+Response conventions are provided through the `JsonResponse<T>` struct, which implements `Into<JsonResult>` and `Into<TypedJsonResult<T>>`, as well as axum's `IntoResponse`.
 
 A handler can return a JSON response for any serializable body, with a default `OK` status:
 
 ```rs
-async fn handler() -> Result {
+async fn handler() -> JsonResult {
+    JsonResponse::of_json(body).into()
+}
+```
+
+Another status code can be set on the response:
+
+```rs
+async fn handler() -> JsonResult {
     JsonResponse::of_json(body).with_status(StatusCode::IM_A_TEAPOT).into()
 }
 ```
 
-A handler can return a simple status response, implicitly deriving a response body as appropriate for the status:
+A handler can return a simple `JsonStatusBody` status response, implicitly deriving the response body as appropriate for the status:
 
 ```rs
-async fn handler() -> Result {
+async fn handler() -> JsonResult {
     JsonResponse::of_status(StatusCode::OK).into()
 }
 ```
 
-An additional detail message can be added to the status response body:
+An additional detail message can be added to the `JsonStatusBody`:
 
 ```rs
-async fn handler() -> Result {
+async fn handler() -> JsonResult {
     JsonResponse::of_status(StatusCode::OK).with_detail("Additional detail").into()
 }
 ```
 
-Finally, the `Err` arm is used to handle internal server errors. A handler can return `Into<anyhow::Error>`, which will be rendered as an `INTERNAL_SERVER_ERROR` response:
+The default `JsonResult` erases the response payload type. If you are returning a consistent type on response, you can return a `TypedJsonResult<T>`:
 
 ```rs
-async fn handler() -> Result {
+async fn handler() -> TypedJsonResult<JsonStatusBody> {
+    JsonResponse::of_status(StatusCode::OK).with_detail("Additional detail").into()
+}
+```
+
+The `Err` arm is available on both `JsonResult` and `TypedJsonResult<T>` to handle status responses. For example, when using `TypedJsonResult<T>` for the happy path, you may choose to return status responses to communicate other results to the caller, whether for an error, informational result, or other case:
+
+```rs
+async fn handler() -> TypedJsonResult<JsonStatusBody> {
+    Err(JsonResponse::of_status(StatusCode::OK).with_detail("Additional detail"))
+}
+```
+
+Finally, the `Err` arm is used to automatically handle internal server errors. A handler can return `Err(Into<anyhow::Error>)`, which will be rendered as an `INTERNAL_SERVER_ERROR` response.
+
+```rs
+async fn handler() -> JsonResult {
     let success = try_do_or_err().await?;
     // ...
 }
 ```
 
-This error handling convention is provided by an implementation of `IntoResponse` for `Into<anyhow::Error>`, added by this crate. With this convention, unhandled errors have built-in `IntoResponse` rendering and other errors must be rendered explicitly by a handler.
-
+With this convention, unhandled errors have built-in `IntoResponse` rendering and other errors must be rendered explicitly by a handler. When the handler returns an internal error in this way, the error details are not visible to the caller.
 
 ## security
 

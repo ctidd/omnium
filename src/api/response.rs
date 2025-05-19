@@ -1,4 +1,4 @@
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::Json;
 use hyper::{HeaderMap, StatusCode};
 use log::error;
@@ -6,12 +6,42 @@ use serde::{Deserialize, Serialize};
 
 pub type JsonResult = core::result::Result<axum::response::Response, JsonResponse<JsonStatusBody>>;
 
+pub type TypedJsonResult<T> =
+    core::result::Result<(StatusCode, HeaderMap, Json<T>), JsonResponse<JsonStatusBody>>;
+
+impl<T> From<JsonResponse<T>> for axum::response::Response
+where
+    T: Serialize,
+{
+    fn from(response: JsonResponse<T>) -> Self {
+        response.into_response()
+    }
+}
+
 impl<T> From<JsonResponse<T>> for JsonResult
 where
     T: Serialize,
 {
     fn from(response: JsonResponse<T>) -> Self {
-        Ok(response.into_response())
+        Ok(response.into())
+    }
+}
+
+impl<T> From<JsonResponse<T>> for (StatusCode, HeaderMap, Json<T>)
+where
+    T: Serialize,
+{
+    fn from(response: JsonResponse<T>) -> Self {
+        (response.code, response.headers, Json(response.body))
+    }
+}
+
+impl<T> From<JsonResponse<T>> for TypedJsonResult<T>
+where
+    T: Serialize,
+{
+    fn from(response: JsonResponse<T>) -> Self {
+        Ok(response.into())
     }
 }
 
@@ -55,14 +85,14 @@ impl<T> IntoResponse for JsonResponse<T>
 where
     T: Serialize,
 {
-    fn into_response(self) -> axum::response::Response {
+    fn into_response(self) -> Response {
         let mut response = (self.code, Json(self.body)).into_response();
 
         for (k, v) in self.headers.iter() {
             response.headers_mut().append(k, v.clone());
         }
 
-        response
+        response.into_response()
     }
 }
 
