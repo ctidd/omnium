@@ -90,8 +90,8 @@ impl JsonResponse<JsonStatusBody> {
         }
     }
 
-    pub fn with_detail(mut self, detail: String) -> Self {
-        self.body = JsonStatusBody::of(self.code, Some(detail));
+    pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
+        self.body = JsonStatusBody::of(self.code, Some(detail.into()));
         self
     }
 }

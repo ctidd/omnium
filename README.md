@@ -45,7 +45,7 @@ An additional detail message can be added to the status response body:
 
 ```rs
 async fn handler() -> Result {
-    JsonResponse::of_status(StatusCode::OK).with_detail("Additional detail".into()).into()
+    JsonResponse::of_status(StatusCode::OK).with_detail("Additional detail").into()
 }
 ```
 

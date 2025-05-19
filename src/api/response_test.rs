@@ -89,7 +89,7 @@ async fn test_err_status_to_response() {
 async fn test_status_with_detail_to_response() {
     async fn handler() -> JsonResult {
         JsonResponse::of_status(StatusCode::UNAUTHORIZED)
-            .with_detail("You shall not pass!".into())
+            .with_detail("You shall not pass!")
             .into()
     }
 
@@ -129,8 +129,7 @@ async fn test_bail_to_response() {
 async fn test_map_err_to_response() {
     async fn handler() -> JsonResult {
         Err(anyhow!("An error to be handled!")).map_err(|_| {
-            JsonResponse::of_status(StatusCode::IM_A_TEAPOT)
-                .with_detail("Handled with detail.".into())
+            JsonResponse::of_status(StatusCode::IM_A_TEAPOT).with_detail("Handled with detail.")
         })?;
         panic!("This line will never be reached.");
     }
