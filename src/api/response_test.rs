@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 use axum::body::Body;
 use axum::debug_handler;
 use axum::http::{Method, Request};
@@ -113,6 +113,25 @@ async fn test_status_with_detail_to_response() {
 async fn test_bail_to_response() {
     async fn handler() -> JsonResult {
         Err(anyhow!("An unhandled error was propagated!"))?;
+        panic!("This line will never be reached.");
+    }
+
+    let response = Router::new()
+        .route("/test", MethodRouter::new().get(handler))
+        .into_service()
+        .oneshot(input())
+        .await
+        .unwrap();
+
+    assert_status_response(response, StatusCode::INTERNAL_SERVER_ERROR, None).await;
+}
+
+#[tokio::test]
+async fn test_bail_json_to_response() {
+    async fn handler() -> JsonResult {
+        Err(anyhow!(JsonResponse::of_status(
+            StatusCode::INTERNAL_SERVER_ERROR
+        )))?;
         panic!("This line will never be reached.");
     }
 

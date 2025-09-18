@@ -138,3 +138,9 @@ where
             .with_status(StatusCode::INTERNAL_SERVER_ERROR)
     }
 }
+
+impl std::fmt::Display for JsonResponse<JsonStatusBody> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
