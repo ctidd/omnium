@@ -132,10 +132,16 @@ where
 {
     fn from(err: E) -> Self {
         let err: anyhow::Error = err.into();
-        error!("Internal error! {:?}", err);
 
-        JsonResponse::of_json(JsonStatusBody::of(StatusCode::INTERNAL_SERVER_ERROR, None))
-            .with_status(StatusCode::INTERNAL_SERVER_ERROR)
+        match err.downcast::<JsonResponse<JsonStatusBody>>() {
+            Ok(err) => return err.into(),
+            Err(unhandled) => {
+                error!("Internal error! {:?}", unhandled);
+
+                JsonResponse::of_json(JsonStatusBody::of(StatusCode::INTERNAL_SERVER_ERROR, None))
+                    .with_status(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
     }
 }
 
