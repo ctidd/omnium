@@ -86,6 +86,27 @@ async fn handler() -> JsonResult {
 
 With this convention, unhandled errors have built-in `IntoResponse` rendering and other errors must be rendered explicitly by a handler. When the handler returns an internal error in this way, the error details are not visible to the caller.
 
+Exposing client errors explicitly at all call sites can be verbose. For scenarios where a variety of client errors may bubble up from within implementation, these can be modeled as `JsonResponse` before error propagation. Such responses must be downcast by the handler to become visible.
+
+```rs
+async fn get_user_by_id(user_id: &UserId) -> Result<Option<UserItem>> {
+    if let Err(error) = user_id.validate() {
+        bail!(JsonResponse::of_status(StatusCode::BAD_REQUEST).with_detail(error.to_string()));
+    }
+    // ...
+}
+
+async fn get_user(user_id: &UserId) -> JsonResult {
+    match get_user_by_id(user_id) {
+        Err(err) => match err.downcast::<JsonResponse<JsonStatusBody>>() {
+            Ok(err) => return err.into(), // Visible modeled errors
+            Err(unhandled) => Err(unhandled)?, // Opaque internal errors
+        }
+        // ...
+    }
+}
+```
+
 ## security
 
 The `security` module provides JWT-based authentication middleware, with utilities for a cookie-based credential exchange or the `authorization` header for browser-based or programmatic authentication.
