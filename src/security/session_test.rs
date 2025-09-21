@@ -16,11 +16,12 @@ use crate::api::response::JsonStatusBody;
 use crate::security::claims::encode_claims;
 use crate::security::secrets::{create_service_secret, ServiceSecret};
 use crate::security::session::{
-    authenticate, create_session, Credential, SessionClaims, SessionManager, SESSION_CLAIMS_TYPE,
+    authenticate, create_session, decorate, Credential, SessionClaims, SessionManager,
+    SESSION_CLAIMS_TYPE,
 };
 
 #[derive(Clone)]
-struct FakeUser {
+struct FakeAccount {
     name: String,
 }
 
@@ -28,14 +29,14 @@ struct FakeAppState {
     pub service_secret: ServiceSecret,
 }
 
-impl SessionManager<FakeUser> for Arc<FakeAppState> {
+impl SessionManager<FakeAccount> for Arc<FakeAppState> {
     async fn get_service_secret(&self) -> anyhow::Result<&ServiceSecret> {
         Ok(&self.service_secret)
     }
 
-    async fn get_user(&self, _user_id: String) -> anyhow::Result<Option<FakeUser>> {
-        Ok(Some(FakeUser {
-            name: "Test User".into(),
+    async fn get_account(&self, _account_id: String) -> anyhow::Result<Option<FakeAccount>> {
+        Ok(Some(FakeAccount {
+            name: "Test Account".into(),
         }))
     }
 
@@ -57,14 +58,18 @@ fn fake_app_state() -> Arc<FakeAppState> {
 fn app(state: Arc<FakeAppState>) -> Router {
     Router::new()
         .route(
-            "/api/user",
-            get(|Extension(caller): Extension<FakeUser>| async move {
+            "/api/account",
+            get(|Extension(caller): Extension<FakeAccount>| async move {
                 format!("Hello, {}!", caller.name)
             }),
         )
         .layer(from_fn_with_state(
             state.clone(),
-            authenticate::<FakeUser, Arc<FakeAppState>>,
+            authenticate::<FakeAccount, Arc<FakeAppState>>,
+        ))
+        .layer(from_fn_with_state(
+            state.clone(),
+            decorate::<FakeAccount, Arc<FakeAppState>>,
         ))
         .with_state(state)
 }
@@ -74,7 +79,7 @@ async fn test_session_header_is_accepted() {
     let state = fake_app_state();
 
     let claims = create_session(
-        "test-user-id",
+        "test-account-id",
         &EncodingKey::from_secret(state.service_secret.value.as_bytes()),
         Duration::from_secs(60),
     );
@@ -84,7 +89,7 @@ async fn test_session_header_is_accepted() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/user")
+                .uri("/api/account")
                 .method(Method::GET)
                 .header("authorization", claims.unwrap())
                 .header("accept", "application/json")
@@ -98,7 +103,7 @@ async fn test_session_header_is_accepted() {
 
     assert_eq!(
         response.into_body().collect().await.unwrap().to_bytes(),
-        "Hello, Test User!"
+        "Hello, Test Account!"
     )
 }
 
@@ -108,7 +113,7 @@ async fn test_barely_expired_session_header_is_still_accepted() {
 
     let claims = encode_claims(
         &SessionClaims {
-            sub: String::from("test-user-id"),
+            sub: String::from("test-account-id"),
             exp: usize::try_from(
                 SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)
@@ -127,7 +132,7 @@ async fn test_barely_expired_session_header_is_still_accepted() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/user")
+                .uri("/api/account")
                 .method(Method::GET)
                 .header("authorization", claims.unwrap())
                 .header("accept", "application/json")
@@ -146,7 +151,7 @@ async fn test_expired_session_header_is_rejected() {
 
     let claims = encode_claims(
         &SessionClaims {
-            sub: String::from("test-user-id"),
+            sub: String::from("test-account-id"),
             exp: usize::try_from(
                 SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)
@@ -165,7 +170,7 @@ async fn test_expired_session_header_is_rejected() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/user")
+                .uri("/api/account")
                 .method(Method::GET)
                 .header("authorization", claims.unwrap())
                 .header("accept", "application/json")
@@ -194,7 +199,7 @@ async fn test_wrong_claims_type_is_rejected() {
 
     let claims = encode_claims(
         &SessionClaims {
-            sub: String::from("test-user-id"),
+            sub: String::from("test-account-id"),
             exp: usize::try_from(
                 SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)
@@ -213,7 +218,7 @@ async fn test_wrong_claims_type_is_rejected() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/user")
+                .uri("/api/account")
                 .method(Method::GET)
                 .header("authorization", claims.unwrap())
                 .header("accept", "application/json")
@@ -243,7 +248,7 @@ async fn test_missing_session_header_is_rejected() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/user")
+                .uri("/api/account")
                 .method(Method::GET)
                 .header("accept", "application/json")
                 .body(Body::empty())

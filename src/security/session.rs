@@ -20,9 +20,9 @@ pub trait SessionManager<U> {
         &self,
     ) -> impl std::future::Future<Output = anyhow::Result<&ServiceSecret>> + Send;
 
-    fn get_user(
+    fn get_account(
         &self,
-        user_id: String,
+        account_id: String,
     ) -> impl std::future::Future<Output = anyhow::Result<Option<U>>> + Send;
 
     fn extract_credential(&self, request: &Request, cookies: &CookieJar) -> Option<Credential>;
@@ -36,13 +36,13 @@ pub struct SessionClaims {
 }
 
 pub fn create_session(
-    user_id: &str,
+    account_id: &str,
     encoding_key: &EncodingKey,
     duration: Duration,
 ) -> anyhow::Result<String> {
     encode_claims(
         &SessionClaims {
-            sub: String::from(user_id),
+            sub: String::from(account_id),
             exp: expires_in(duration)?,
             omn_cl_typ: SESSION_CLAIMS_TYPE.into(),
         },
@@ -76,6 +76,20 @@ pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionManager<U>
     mut request: Request,
     next: Next,
 ) -> JsonResult {
+    if request.extensions().get::<U>().is_some() {
+        Ok(next.run(request).await)
+    } else {
+        info!("Unauthorized!");
+        JsonResponse::of_status(StatusCode::UNAUTHORIZED).into()
+    }
+}
+
+pub async fn decorate<U: Clone + Send + Sync + 'static, S: SessionManager<U>>(
+    State(session_manager): State<S>,
+    cookies: CookieJar,
+    mut request: Request,
+    next: Next,
+) -> JsonResult {
     let path = request.extensions().get::<MatchedPath>();
     match path {
         Some(path) => info!("Authorizing path: {}", path.as_str()),
@@ -95,30 +109,30 @@ pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionManager<U>
         ) {
             if decoded.claims.omn_cl_typ != SESSION_CLAIMS_TYPE {
                 info!("Authentication rejected! Illegal claims type.");
-                return JsonResponse::of_status(StatusCode::UNAUTHORIZED).into();
+                return Ok(next.run(request).await);
             }
 
-            let user_id = decoded.claims.sub;
+            let account_id = decoded.claims.sub;
 
-            let lookup = session_manager.get_user(user_id).await?;
+            let lookup = session_manager.get_account(account_id).await?;
 
             match lookup {
-                Some(user) => {
-                    request.extensions_mut().insert::<U>(user);
-                    info!("Inserted user to request extensions...");
+                Some(account) => {
+                    request.extensions_mut().insert::<U>(account);
+                    info!("Inserted account to request extensions...");
                 }
                 None => {
-                    info!("Authentication rejected! User lookup returned no result.");
-                    return JsonResponse::of_status(StatusCode::UNAUTHORIZED).into();
+                    info!("Authentication rejected! Account lookup returned no result.");
+                    return Ok(next.run(request).await);
                 }
             }
         } else {
             info!("Authentication rejected! Unable to decode claims from credential.");
-            return JsonResponse::of_status(StatusCode::UNAUTHORIZED).into();
+            return Ok(next.run(request).await);
         }
     } else {
         info!("Authentication rejected! No credential in request.");
-        return JsonResponse::of_status(StatusCode::UNAUTHORIZED).into();
+        return Ok(next.run(request).await);
     }
 
     Ok(next.run(request).await)

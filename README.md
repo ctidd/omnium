@@ -89,15 +89,15 @@ With this convention, unhandled errors have built-in `IntoResponse` rendering an
 Exposing visible errors explicitly at all call sites can be verbose. For scenarios where a variety of visible errors may bubble up from within implementation, you can propagate and expose such an error as a `JsonResponse`:
 
 ```rs
-async fn get_user_by_id(user_id: &UserId) -> Result<Option<UserItem>> {
-    if let Err(error) = user_id.validate() {
+async fn get_account_by_id(account_id: &AccountId) -> Result<Option<AccountItem>> {
+    if let Err(error) = account_id.validate() {
         bail!(JsonResponse::of_status(StatusCode::BAD_REQUEST).with_detail(error.to_string()));
     }
     // ...
 }
 
-async fn get_user(user_id: &UserId) -> JsonResult {
-    let user = get_user_by_id(user_id)?;
+async fn get_account(account_id: &AccountId) -> JsonResult {
+    let account = get_account_by_id(account_id)?;
     // ...
 }
 ```
@@ -116,22 +116,22 @@ Configure authentication middleware:
 
 ```rs
 #[derive(Clone)]
-struct AppUser {}
+struct AppAccount {}
 
 struct AppState {
     pub service_secret: ServiceSecret,
 }
 
-impl SessionManager<AppUser> for Arc<AppState> {
+impl SessionManager<AppAccount> for Arc<AppState> {
     async fn get_service_secret(&self) -> anyhow::Result<&ServiceSecret> {
         // Return secret from application secret manager:
         Ok(&self.service_secret)
     }
 
 
-    async fn get_user(&self, _user_id: String) -> anyhow::Result<Option<AppUser>> {
-        // Return user from application database:
-        Ok(Some(AppUser {}))
+    async fn get_account(&self, _account_id: String) -> anyhow::Result<Option<AppAccount>> {
+        // Return account from application database:
+        Ok(Some(AppAccount {}))
     }
 
     fn extract_credential(&self, request: &Request, _cookies: &CookieJar) -> Option<Credential> {
@@ -146,39 +146,45 @@ Attach authentication middleware:
 ```rs
 fn app(state: Arc<AppState>) -> Router {
     Router::new()
-        .route("/api/user", get(|| async { "Hello, user!" }))
+        .route("/api/account", get(|| async { "Hello, caller!" }))
         .layer(from_fn_with_state(
             state.clone(),
-            authenticate::<AppUser, Arc<AppState>>,
+            authenticate::<AppAccount, Arc<AppState>>,
+        ))
+         .layer(from_fn_with_state(
+            state.clone(),
+            decorate::<AppAccount, Arc<AppState>>,
         ))
         .with_state(state)
 }
 ```
 
-Create the user session:
+Note that the authentication middleware is attached in two parts: 1) decorating the authenticated account on the request, and 2) enforcing authentication for the request.
+
+Create the account session:
 
 ```rs
 create_session(
-    "some-user-id",
+    "some-account-id",
     &EncodingKey::from_secret(state.service_secret.value.as_bytes()),
     Duration::from_secs(60),
 );
 ```
 
-With `Credential::from_authorization_header`, a client may pass the session as the `authorization` header. With `Credential::from_cookie`, a client may pass the session as the `__Host-omn-sess` cookie. For a simple, user-facing web application, you can set the `__Host-omn-sess` cookie when the user signs in, in order to authenticate requests to the service running on the same origin. If the application shares a session across multiple services on different origins, it can expose the session for use by the client in the `authorization` header for programmatic, cross-origin requests. You can plug in your own handling for extracting credentials from requests with a custom `extract_credential` handler.
+With `Credential::from_authorization_header`, a client may pass the session as the `authorization` header. With `Credential::from_cookie`, a client may pass the session as the `__Host-omn-sess` cookie. For a simple, user-facing web application, you can set the `__Host-omn-sess` cookie when the account signs in, in order to authenticate requests to the service running on the same origin. If the application shares a session across multiple services on different origins, it can expose the session for use by the client in the `authorization` header for programmatic, cross-origin requests. You can plug in your own handling for extracting credentials from requests with a custom `extract_credential` handler.
 
-Requests from an unauthenticated user will reject with a 401 response.
+Requests from an unauthenticated caller will reject with a 401 response.
 
-For an authenticated user, the user object from `user_lookup` can be retrieved from request state to avoid redundant lookup in handlers:
+For an authenticated caller, the account object from `account_lookup` can be retrieved from request state to avoid redundant lookup in handlers:
 
 ```rs
 pub async fn handler(
-    Extension(caller): Extension<AppUser>,
+    Extension(caller): Extension<AppAccount>,
 ) {
     println!("Caller is: {}", caller);
 }
 ```
 
-Because a variety of data may need to be passed and verified between an application and its users, `encode_claims` and `decode_claims` may also be used for other purposes other than authentication. Note that claims are signed but not encrypted.
+Because a variety of data may need to be passed and verified between an application and its callers, `encode_claims` and `decode_claims` may also be used for other purposes other than authentication. Note that claims are signed but not encrypted.
 
 In addition to claims-based utilities, this crate wraps `aes_gcm` to provide utilties `encrypt_string_aes256_gcm` and `decrypt_string_aes256_gcm`. A secret created by `create_service_secret` can also be used with these encryption utilities.
