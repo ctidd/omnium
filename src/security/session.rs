@@ -59,7 +59,8 @@ impl Credential {
             .headers()
             .get("authorization")
             .and_then(|header| header.to_str().ok())
-            .map(|header| Credential(header.into()))
+            .and_then(|header| header.strip_prefix("Bearer "))
+            .map(|token| Credential(token.to_string()))
     }
 
     pub fn from_cookie(cookies: &CookieJar) -> Option<Credential> {

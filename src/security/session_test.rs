@@ -91,7 +91,7 @@ async fn test_session_header_is_accepted() {
             Request::builder()
                 .uri("/api/account")
                 .method(Method::GET)
-                .header("authorization", claims.unwrap())
+                .header("authorization", format!("Bearer {}", claims.unwrap()))
                 .header("accept", "application/json")
                 .body(Body::empty())
                 .unwrap(),
@@ -134,7 +134,7 @@ async fn test_barely_expired_session_header_is_still_accepted() {
             Request::builder()
                 .uri("/api/account")
                 .method(Method::GET)
-                .header("authorization", claims.unwrap())
+                .header("authorization", format!("Bearer {}", claims.unwrap()))
                 .header("accept", "application/json")
                 .body(Body::empty())
                 .unwrap(),
@@ -163,6 +163,44 @@ async fn test_expired_session_header_is_rejected() {
             omn_cl_typ: SESSION_CLAIMS_TYPE.into(),
         },
         &EncodingKey::from_secret(state.service_secret.value.as_bytes()),
+    );
+
+    let app = app(state).into_service();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/account")
+                .method(Method::GET)
+                .header("authorization", format!("Bearer {}", claims.unwrap()))
+                .header("accept", "application/json")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let response_body = response.into_body().collect().await.unwrap().to_bytes();
+    let response_body: JsonStatusBody = serde_json::from_slice(&response_body).unwrap();
+
+    let expected_body = JsonStatusBody {
+        reason: Some(String::from("Unauthorized")),
+        detail: None,
+    };
+
+    assert_eq!(response_body, expected_body);
+}
+
+#[tokio::test]
+async fn test_missing_header_bearer_prefix_is_rejected() {
+    let state = fake_app_state();
+
+    let claims = create_session(
+        "test-account-id",
+        &EncodingKey::from_secret(state.service_secret.value.as_bytes()),
+        Duration::from_secs(60),
     );
 
     let app = app(state).into_service();
@@ -220,7 +258,7 @@ async fn test_wrong_claims_type_is_rejected() {
             Request::builder()
                 .uri("/api/account")
                 .method(Method::GET)
-                .header("authorization", claims.unwrap())
+                .header("authorization", format!("Bearer {}", claims.unwrap()))
                 .header("accept", "application/json")
                 .body(Body::empty())
                 .unwrap(),
