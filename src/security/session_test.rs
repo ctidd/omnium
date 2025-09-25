@@ -12,7 +12,7 @@ use http_body_util::BodyExt;
 use jsonwebtoken::EncodingKey;
 use tower::ServiceExt;
 
-use crate::api::response::JsonStatusBody;
+use crate::api::response::JsonStatus;
 use crate::security::claims::encode_claims;
 use crate::security::secrets::{create_service_secret, ServiceSecret};
 use crate::security::session::{
@@ -183,9 +183,9 @@ async fn test_expired_session_header_is_rejected() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
     let response_body = response.into_body().collect().await.unwrap().to_bytes();
-    let response_body: JsonStatusBody = serde_json::from_slice(&response_body).unwrap();
+    let response_body: JsonStatus = serde_json::from_slice(&response_body).unwrap();
 
-    let expected_body = JsonStatusBody {
+    let expected_body = JsonStatus {
         reason: Some(String::from("Unauthorized")),
         detail: None,
     };
@@ -221,9 +221,9 @@ async fn test_missing_header_bearer_prefix_is_rejected() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
     let response_body = response.into_body().collect().await.unwrap().to_bytes();
-    let response_body: JsonStatusBody = serde_json::from_slice(&response_body).unwrap();
+    let response_body: JsonStatus = serde_json::from_slice(&response_body).unwrap();
 
-    let expected_body = JsonStatusBody {
+    let expected_body = JsonStatus {
         reason: Some(String::from("Unauthorized")),
         detail: None,
     };
@@ -269,9 +269,9 @@ async fn test_wrong_claims_type_is_rejected() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
     let response_body = response.into_body().collect().await.unwrap().to_bytes();
-    let response_body: JsonStatusBody = serde_json::from_slice(&response_body).unwrap();
+    let response_body: JsonStatus = serde_json::from_slice(&response_body).unwrap();
 
-    let expected_body = JsonStatusBody {
+    let expected_body = JsonStatus {
         reason: Some(String::from("Unauthorized")),
         detail: None,
     };
@@ -298,9 +298,9 @@ async fn test_missing_session_header_is_rejected() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
     let response_body = response.into_body().collect().await.unwrap().to_bytes();
-    let response_body: JsonStatusBody = serde_json::from_slice(&response_body).unwrap();
+    let response_body: JsonStatus = serde_json::from_slice(&response_body).unwrap();
 
-    let expected_body = JsonStatusBody {
+    let expected_body = JsonStatus {
         reason: Some(String::from("Unauthorized")),
         detail: None,
     };

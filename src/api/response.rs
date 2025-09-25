@@ -4,46 +4,9 @@ use hyper::{HeaderMap, StatusCode};
 use log::error;
 use serde::{Deserialize, Serialize};
 
-pub type JsonResult = core::result::Result<axum::response::Response, JsonResponse<JsonStatusBody>>;
+pub struct ResponseError(pub anyhow::Error);
 
-pub type TypedJsonResult<T> =
-    core::result::Result<(StatusCode, HeaderMap, Json<T>), JsonResponse<JsonStatusBody>>;
-
-impl<T> From<JsonResponse<T>> for axum::response::Response
-where
-    T: Serialize,
-{
-    fn from(response: JsonResponse<T>) -> Self {
-        response.into_response()
-    }
-}
-
-impl<T> From<JsonResponse<T>> for JsonResult
-where
-    T: Serialize,
-{
-    fn from(response: JsonResponse<T>) -> Self {
-        Ok(response.into())
-    }
-}
-
-impl<T> From<JsonResponse<T>> for (StatusCode, HeaderMap, Json<T>)
-where
-    T: Serialize,
-{
-    fn from(response: JsonResponse<T>) -> Self {
-        (response.code, response.headers, Json(response.body))
-    }
-}
-
-impl<T> From<JsonResponse<T>> for TypedJsonResult<T>
-where
-    T: Serialize,
-{
-    fn from(response: JsonResponse<T>) -> Self {
-        Ok(response.into())
-    }
-}
+pub type JsonResult<T> = core::result::Result<JsonResponse<T>, ResponseError>;
 
 #[derive(Debug)]
 pub struct JsonResponse<T>
@@ -96,57 +59,96 @@ where
     }
 }
 
+impl<T> From<JsonResponse<T>> for axum::response::Response
+where
+    T: Serialize,
+{
+    fn from(response: JsonResponse<T>) -> Self {
+        response.into_response()
+    }
+}
+
+impl<T> From<JsonResponse<T>> for JsonResult<T>
+where
+    T: Serialize,
+{
+    fn from(response: JsonResponse<T>) -> Self {
+        Ok(response.into())
+    }
+}
+
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct JsonStatusBody {
+pub struct JsonStatus {
     pub reason: Option<String>,
     pub detail: Option<String>,
 }
 
-impl JsonStatusBody {
-    pub fn of(code: StatusCode, detail: Option<String>) -> JsonStatusBody {
-        JsonStatusBody {
+impl JsonStatus {
+    pub fn of(code: StatusCode, detail: Option<String>) -> JsonStatus {
+        JsonStatus {
             reason: code.canonical_reason().map(String::from),
             detail,
         }
     }
 }
 
-impl JsonResponse<JsonStatusBody> {
-    pub fn of_status(code: StatusCode) -> JsonResponse<JsonStatusBody> {
+impl JsonResponse<JsonStatus> {
+    pub fn of_status(code: StatusCode) -> JsonResponse<JsonStatus> {
         JsonResponse {
             headers: HeaderMap::new(),
             code,
-            body: JsonStatusBody::of(code, None),
+            body: JsonStatus::of(code, None),
         }
     }
 
     pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
-        self.body = JsonStatusBody::of(self.code, Some(detail.into()));
+        self.body = JsonStatus::of(self.code, Some(detail.into()));
         self
     }
 }
 
-impl<E> From<E> for JsonResponse<JsonStatusBody>
+impl std::fmt::Display for JsonResponse<JsonStatus> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for JsonResponse<JsonStatus> {}
+
+impl<E> From<E> for ResponseError
 where
     E: Into<anyhow::Error>,
 {
     fn from(err: E) -> Self {
-        let err: anyhow::Error = err.into();
+        return ResponseError(err.into());
+    }
+}
 
-        match err.downcast::<JsonResponse<JsonStatusBody>>() {
-            Ok(err) => return err.into(),
+impl IntoResponse for ResponseError {
+    fn into_response(self) -> Response {
+        match self.0.downcast::<JsonResponse<JsonStatus>>() {
+            Ok(err) => return err.into_response(),
             Err(unhandled) => {
                 error!("Internal error! {:?}", unhandled);
 
-                JsonResponse::of_json(JsonStatusBody::of(StatusCode::INTERNAL_SERVER_ERROR, None))
+                JsonResponse::of_json(JsonStatus::of(StatusCode::INTERNAL_SERVER_ERROR, None))
                     .with_status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .into_response()
             }
         }
     }
 }
 
-impl std::fmt::Display for JsonResponse<JsonStatusBody> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+#[macro_export]
+macro_rules! respond {
+    ($val:expr) => {
+        return Ok($val.into());
+    };
+}
+
+#[macro_export]
+macro_rules! respond_err {
+    ($($tt:tt)*) => {
+        return Err($crate::api::response::ResponseError(anyhow::anyhow!($($tt)*)));
     }
 }

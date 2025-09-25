@@ -8,7 +8,7 @@ use jsonwebtoken::{DecodingKey, EncodingKey};
 use log::info;
 use serde::{Deserialize, Serialize};
 
-use crate::api::response::{JsonResponse, JsonResult};
+use crate::api::response::{JsonResponse, ResponseError};
 use crate::security::claims::decode_claims;
 use crate::security::claims::{encode_claims, expires_in};
 use crate::security::secrets::ServiceSecret;
@@ -72,16 +72,14 @@ impl Credential {
 }
 
 pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionManager<U>>(
-    State(session_manager): State<S>,
-    cookies: CookieJar,
-    mut request: Request,
+    request: Request,
     next: Next,
-) -> JsonResult {
+) -> core::result::Result<axum::response::Response, ResponseError> {
     if request.extensions().get::<U>().is_some() {
         Ok(next.run(request).await)
     } else {
-        info!("Unauthorized!");
-        JsonResponse::of_status(StatusCode::UNAUTHORIZED).into()
+        info!("Unauthorized! Authentication was required.");
+        Err(JsonResponse::of_status(StatusCode::UNAUTHORIZED).into())
     }
 }
 
@@ -90,7 +88,7 @@ pub async fn decorate<U: Clone + Send + Sync + 'static, S: SessionManager<U>>(
     cookies: CookieJar,
     mut request: Request,
     next: Next,
-) -> JsonResult {
+) -> core::result::Result<axum::response::Response, ResponseError> {
     let path = request.extensions().get::<MatchedPath>();
     match path {
         Some(path) => info!("Authorizing path: {}", path.as_str()),
@@ -109,7 +107,7 @@ pub async fn decorate<U: Clone + Send + Sync + 'static, S: SessionManager<U>>(
             &DecodingKey::from_secret(session_manager.get_service_secret().await?.value.as_bytes()),
         ) {
             if decoded.claims.omn_cl_typ != SESSION_CLAIMS_TYPE {
-                info!("Authentication rejected! Illegal claims type.");
+                info!("Authentication failed! Illegal claims type.");
                 return Ok(next.run(request).await);
             }
 
@@ -123,16 +121,16 @@ pub async fn decorate<U: Clone + Send + Sync + 'static, S: SessionManager<U>>(
                     info!("Inserted account to request extensions...");
                 }
                 None => {
-                    info!("Authentication rejected! Account lookup returned no result.");
+                    info!("Authentication failed! Account lookup returned no result.");
                     return Ok(next.run(request).await);
                 }
             }
         } else {
-            info!("Authentication rejected! Unable to decode claims from credential.");
+            info!("Authentication failed! Unable to decode claims from credential.");
             return Ok(next.run(request).await);
         }
     } else {
-        info!("Authentication rejected! No credential in request.");
+        info!("Authentication failed! No credential in request.");
         return Ok(next.run(request).await);
     }
 

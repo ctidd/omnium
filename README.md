@@ -4,19 +4,17 @@ A set of extensions for building web applications on axum.
 
 **Unstable:** This crate is not ready for use. The author is building out these extensions to iterate on a proof of concept, and the surface may change frequently.
 
-## api
+## Responses
 
 The `api::responses` module provides a set of response conventions for axum handlers, implementing axum's `IntoResponse` trait for typical use cases.
 
-A handler returns `JsonResult` or `TypedJsonResult<T>`, where `JsonResult` can be used for type-erased responses and `TypedJsonResult<T>` can be used for consistently-typed responses.
-
-The `Ok(...)` arm on these types can be used regardless of status code, to return custom responses:
+A handler returns `JsonResult<T>`:
 
 ```rs
 // ...
-use omnium::api::{JsonResult, JsonResponse};
+use omnium::api::{JsonResult, JsonResponse, JsonStatus};
 
-async fn handler() -> JsonResult {
+async fn handler() -> JsonResult<JsonStatus> {
     let result = try_do_or_err().await;
     match result {
         Ok => JsonResponse::of_status(StatusCode::ACCEPTED).into()
@@ -25,84 +23,78 @@ async fn handler() -> JsonResult {
 }
 ```
 
-Response conventions are provided through the `JsonResponse<T>` struct, which implements `Into<JsonResult>` and `Into<TypedJsonResult<T>>`, as well as axum's `IntoResponse`.
+You can build responses using `JsonResponse<T>`, which implements `Into<JsonResult>`, as well as axum's `IntoResponse`.
+
+For clarity, you can use the provided `respond!` macro instead of calling `.into()`.
 
 A handler can return a JSON response for any serializable body, with a default `OK` status:
 
 ```rs
-async fn handler() -> JsonResult {
-    JsonResponse::of_json(body).into()
+async fn handler() -> JsonResult<SomeBodyType> {
+    respond!(JsonResponse::of_json(body));
 }
 ```
 
 Another status code can be set on the response:
 
 ```rs
-async fn handler() -> JsonResult {
-    JsonResponse::of_json(body).with_status(StatusCode::IM_A_TEAPOT).into()
+async fn handler() -> JsonResult<JsonStatus> {
+    respond!(JsonResponse::of_json(body).with_status(StatusCode::IM_A_TEAPOT));
 }
 ```
 
-A handler can return a simple `JsonStatusBody` status response, implicitly deriving the response body as appropriate for the status:
+A handler can return a simple `JsonStatus` status response, implicitly deriving the response body as appropriate for the status:
 
 ```rs
-async fn handler() -> JsonResult {
-    JsonResponse::of_status(StatusCode::OK).into()
+async fn handler() -> JsonResult<JsonStatus> {
+    respond!(JsonResponse::of_status(StatusCode::OK));
 }
 ```
 
-An additional detail message can be added to the `JsonStatusBody`:
+An additional detail message can be added to the `JsonStatus`:
 
 ```rs
-async fn handler() -> JsonResult {
-    JsonResponse::of_status(StatusCode::OK).with_detail("Additional detail").into()
+async fn handler() -> JsonResult<JsonStatus> {
+    respond!(JsonResponse::of_status(StatusCode::OK).with_detail("Additional detail"));
 }
 ```
 
-The default `JsonResult` erases the response payload type. If you are returning a consistent type on response, you can return a `TypedJsonResult<T>`:
+## Errors
+
+A status response can be returned on the `Err` arm of `JsonResult`, regardless of the happy path response type.
 
 ```rs
-async fn handler() -> TypedJsonResult<JsonStatusBody> {
-    JsonResponse::of_status(StatusCode::OK).with_detail("Additional detail").into()
-}
-```
-
-The `Err` arm is available on both `JsonResult` and `TypedJsonResult<T>` to handle status responses. For example, when using `TypedJsonResult<T>` for the happy path, you may choose to return status responses to communicate other results to the caller, whether for an error, informational result, or other case:
-
-```rs
-async fn handler() -> TypedJsonResult<JsonStatusBody> {
+async fn handler() -> JsonResult<()> {
     Err(JsonResponse::of_status(StatusCode::OK).with_detail("Additional detail"))
 }
 ```
 
-Finally, the `Err` arm is used to automatically handle internal server errors. A handler can return `Err(Into<anyhow::Error>)`, which will be rendered as an `INTERNAL_SERVER_ERROR` response.
+An arbitrary error propagated to the top of a handler is treated as an internal server error, and is rendered with an opaque `INTERNAL_SERVER_ERROR` response that masks any error details from the caller.
 
 ```rs
-async fn handler() -> JsonResult {
+async fn handler() -> JsonResult<()> {
     let success = try_do_or_err().await?;
     // ...
 }
 ```
 
-With this convention, unhandled errors have built-in `IntoResponse` rendering and other errors must be rendered explicitly by a handler. When the handler returns an internal error in this way, the error details are not visible to the caller.
-
-Exposing visible errors explicitly at all call sites can be verbose. For scenarios where a variety of visible errors may bubble up from within implementation, you can propagate and expose such an error as a `JsonResponse`:
+Depending on whether you are in a function returning `anyhow::Result` or `JsonResult`, you can return errors using `anyhow::bail!` or `respond_err!`, respectively. In both cases, you can propagate an arbitrary error to be handled as an internal server error, or you can provide a `JsonResult` status response.
 
 ```rs
-async fn get_account_by_id(account_id: &AccountId) -> Result<Option<AccountItem>> {
-    if let Err(error) = account_id.validate() {
-        bail!(JsonResponse::of_status(StatusCode::BAD_REQUEST).with_detail(error.to_string()));
-    }
-    // ...
-}
-
-async fn get_account(account_id: &AccountId) -> JsonResult {
-    let account = get_account_by_id(account_id)?;
+async fn handler() -> anyhow::Result<()> {
+    anyhow::bail!("Internal error!");
     // ...
 }
 ```
 
-## security
+```rs
+async fn handler() -> JsonResult<()> {
+    respond_err!("Internal error!");
+    // ...
+}
+```
+
+## Authentication
 
 The `security` module provides JWT-based authentication middleware, with utilities for a cookie-based credential exchange or the `authorization` header for browser-based or programmatic authentication.
 
