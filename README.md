@@ -71,12 +71,15 @@ async fn handler() -> JsonResult<()> {
 
 An arbitrary error propagated to the top of a handler is treated as an internal server error, and is rendered with an opaque `INTERNAL_SERVER_ERROR` response that masks any error details from the caller.
 
+
 ```rs
 async fn handler() -> JsonResult<()> {
     let success = try_do_or_err().await?;
     // ...
 }
 ```
+
+Run your application with the `RUST_BACKTRACE=1` environment variable set for such an internal error to display a backtrace when logged.
 
 Depending on whether you are in a function returning `anyhow::Result` or `JsonResult`, you can return errors using `anyhow::bail!` or `respond_err!`, respectively. In both cases, you can propagate an arbitrary error to be handled as an internal server error, or you can provide a `JsonResult` status response.
 
