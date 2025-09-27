@@ -91,8 +91,8 @@ pub async fn decorate<U: Clone + Send + Sync + 'static, S: SessionManager<U>>(
 ) -> core::result::Result<axum::response::Response, ResponseError> {
     let path = request.extensions().get::<MatchedPath>();
     match path {
-        Some(path) => info!("Authorizing path: {}", path.as_str()),
-        None => info!("Authorizing path: {}", "No matched path"),
+        Some(path) => info!("Authenticating path: {}", path.as_str()),
+        None => info!("Authenticating path: {}", "No matched path"),
     }
 
     // Extract credential from either session cookie or authorization header:
@@ -126,11 +126,11 @@ pub async fn decorate<U: Clone + Send + Sync + 'static, S: SessionManager<U>>(
                 }
             }
         } else {
-            info!("Authentication failed! Unable to decode claims from credential.");
+            info!("Authentication failed! Unable to decode claims.");
             return Ok(next.run(request).await);
         }
     } else {
-        info!("Authentication failed! No credential in request.");
+        info!("Authentication skipped: No credential in request.");
         return Ok(next.run(request).await);
     }
 
