@@ -131,9 +131,7 @@ impl IntoResponse for ResponseError {
             Err(unhandled) => {
                 error!("Internal error! {:?}", unhandled);
 
-                JsonResponse::of_json(JsonStatus::of(StatusCode::INTERNAL_SERVER_ERROR, None))
-                    .with_status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .into_response()
+                JsonResponse::of_status(StatusCode::INTERNAL_SERVER_ERROR).into_response()
             }
         }
     }
