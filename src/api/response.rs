@@ -101,6 +101,12 @@ impl JsonResponse<JsonStatus> {
         }
     }
 
+    pub fn of_internal_err(e: anyhow::Error) -> JsonResponse<JsonStatus> {
+        error!("Internal error! {:?}", e);
+
+        JsonResponse::of_status(StatusCode::INTERNAL_SERVER_ERROR)
+    }
+
     pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
         self.body = JsonStatus::of(self.code, Some(detail.into()));
         self
@@ -128,11 +134,7 @@ impl IntoResponse for ResponseError {
     fn into_response(self) -> Response {
         match self.0.downcast::<JsonResponse<JsonStatus>>() {
             Ok(err) => return err.into_response(),
-            Err(unhandled) => {
-                error!("Internal error! {:?}", unhandled);
-
-                JsonResponse::of_status(StatusCode::INTERNAL_SERVER_ERROR).into_response()
-            }
+            Err(unhandled) => JsonResponse::of_internal_err(unhandled).into_response(),
         }
     }
 }
