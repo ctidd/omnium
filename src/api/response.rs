@@ -1,7 +1,10 @@
-use axum::response::{IntoResponse, Response};
-use axum::Json;
-use hyper::{HeaderMap, StatusCode};
-use log::error;
+use axum::{
+    http::HeaderValue,
+    response::{IntoResponse, Response},
+    Json,
+};
+use hyper::{header::IntoHeaderName, HeaderMap, StatusCode};
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 
 pub struct ResponseError(pub anyhow::Error);
@@ -22,7 +25,7 @@ impl<T> JsonResponse<T>
 where
     T: Serialize,
 {
-    pub fn of_json(body: T) -> JsonResponse<T>
+    pub fn of(body: T) -> JsonResponse<T>
     where
         T: Serialize,
     {
@@ -33,13 +36,28 @@ where
         }
     }
 
+    pub fn of_json(body: T) -> JsonResponse<T>
+    where
+        T: Serialize,
+    {
+        JsonResponse::of(body)
+    }
+
+    pub fn with_status(mut self, code: StatusCode) -> Self {
+        self.code = code;
+        self
+    }
+
     pub fn with_headers(mut self, headers: HeaderMap) -> Self {
         self.headers = headers;
         self
     }
 
-    pub fn with_status(mut self, code: StatusCode) -> Self {
-        self.code = code;
+    pub fn append_header<N>(mut self, key: N, value: HeaderValue) -> Self
+    where
+        N: IntoHeaderName,
+    {
+        self.headers.append(key, value);
         self
     }
 }
@@ -59,7 +77,7 @@ where
     }
 }
 
-impl<T> From<JsonResponse<T>> for axum::response::Response
+impl<T> From<JsonResponse<T>> for Response
 where
     T: Serialize,
 {
@@ -101,8 +119,18 @@ impl JsonResponse<JsonStatus> {
         }
     }
 
-    pub fn of_internal_err(e: anyhow::Error) -> JsonResponse<JsonStatus> {
-        error!("Internal error! {:?}", e);
+    pub fn of_client_err(code: StatusCode, err: anyhow::Error) -> JsonResponse<JsonStatus> {
+        info!("Client error: {}", err);
+
+        JsonResponse {
+            headers: HeaderMap::new(),
+            code,
+            body: JsonStatus::of(code, None),
+        }
+    }
+
+    pub fn of_internal_err(err: anyhow::Error) -> JsonResponse<JsonStatus> {
+        error!("Internal error: {:?}", err);
 
         JsonResponse::of_status(StatusCode::INTERNAL_SERVER_ERROR)
     }
@@ -110,6 +138,10 @@ impl JsonResponse<JsonStatus> {
     pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
         self.body = JsonStatus::of(self.code, Some(detail.into()));
         self
+    }
+
+    pub fn anyhow(self) -> anyhow::Error {
+        anyhow::anyhow!(self)
     }
 }
 

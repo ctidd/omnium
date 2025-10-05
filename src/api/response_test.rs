@@ -201,7 +201,7 @@ async fn test_bail_direct_err_to_response() {
 #[tokio::test]
 async fn test_json_to_response() {
     async fn handler() -> JsonResult<JsonStatus> {
-        JsonResponse::of_json(JsonStatus {
+        JsonResponse::of(JsonStatus {
             reason: Some("test".into()),
             detail: Some("content".into()),
         })
@@ -230,7 +230,7 @@ async fn test_json_to_response() {
 #[tokio::test]
 async fn test_json_to_response_default_ok() {
     async fn handler() -> JsonResult<JsonStatus> {
-        JsonResponse::of_json(JsonStatus {
+        JsonResponse::of(JsonStatus {
             reason: Some("test".into()),
             detail: Some("content".into()),
         })

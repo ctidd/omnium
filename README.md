@@ -31,7 +31,7 @@ A handler can return a JSON response for any serializable body, with a default `
 
 ```rs
 async fn handler() -> JsonResult<SomeBodyType> {
-    respond!(JsonResponse::of_json(body));
+    respond!(JsonResponse::of(body));
 }
 ```
 
@@ -39,7 +39,7 @@ Another status code can be set on the response:
 
 ```rs
 async fn handler() -> JsonResult<JsonStatus> {
-    respond!(JsonResponse::of_json(body).with_status(StatusCode::IM_A_TEAPOT));
+    respond!(JsonResponse::of(body).with_status(StatusCode::IM_A_TEAPOT));
 }
 ```
 
