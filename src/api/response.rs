@@ -120,7 +120,7 @@ impl JsonResponse<JsonStatus> {
     }
 
     pub fn of_client_err(err: anyhow::Error, code: StatusCode) -> JsonResponse<JsonStatus> {
-        info!("Client error: {}", err);
+        info!("Client error: {} as {}", err, code);
 
         JsonResponse {
             headers: HeaderMap::new(),
