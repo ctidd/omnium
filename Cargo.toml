@@ -3,7 +3,7 @@ name = "omnium"
 description = "A set of extensions for building web applications on axum."
 repository = "https://github.com/ctidd/omnium"
 license = "MIT"
-version = "0.10.3"
+version = "0.10.4"
 edition = "2021"
 
 [dependencies]
