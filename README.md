@@ -99,39 +99,28 @@ async fn handler() -> JsonResult<()> {
 
 ## Authentication
 
-The `security` module provides JWT-based authentication middleware, with utilities for a cookie-based credential exchange or the `authorization` header for browser-based or programmatic authentication.
-
-Create a service secret:
-
-```rs
-let service_secret = create_service_secret();
-```
+The `session` module provides JWT-based authentication middleware, with utilities for a cookie-based credential exchange or the `authorization` header for browser-based or programmatic authentication.
 
 Configure authentication middleware:
 
 ```rs
-#[derive(Clone)]
-struct AppAccount {}
+struct UserAccount {}
 
-struct AppState {
-    pub service_secret: ServiceSecret,
-}
+struct AppState {}
 
-impl SessionManager<AppAccount> for Arc<AppState> {
-    async fn get_service_secret(&self) -> anyhow::Result<&ServiceSecret> {
-        // Return secret from application secret manager:
-        Ok(&self.service_secret)
+#[async_trait]
+impl SessionManager<UserAccount> for Arc<AppState> {
+    fn decode_claims(&self, credential: Credential) -> anyhow::Result<SessionClaims> {
+        // Decode claims from credential...
     }
 
 
-    async fn get_account(&self, _account_id: String) -> anyhow::Result<Option<AppAccount>> {
-        // Return account from application database:
-        Ok(Some(AppAccount {}))
+    async fn get_account(&self, account_id: String) -> anyhow::Result<Option<UserAccount>> {
+        // Return account from application database...
     }
 
     fn extract_credential(&self, request: &Request, _cookies: &CookieJar) -> Option<Credential> {
-        // Extract credential from request:
-        Credential::from_authorization_header(&request)
+        // Extract credential from request...
     }
 }
 ```
@@ -144,33 +133,33 @@ fn app(state: Arc<AppState>) -> Router {
         .route("/api/account", get(|| async { "Hello, caller!" }))
         .layer(from_fn_with_state(
             state.clone(),
-            authenticate::<AppAccount, Arc<AppState>>,
+            authorize::<UserAccount, Arc<AppState>>,
         ))
          .layer(from_fn_with_state(
             state.clone(),
-            decorate::<AppAccount, Arc<AppState>>,
+            resolve::<UserAccount, Arc<AppState>>,
         ))
         .with_state(state)
 }
 ```
 
-Note that the authentication middleware is attached in two parts: 1) decorating the authenticated account on the request, and 2) enforcing authentication for the request.
+Note that the authentication middleware is attached in two parts: 1) resolving the authenticated account on the request, and 2) enforcing authentication for the request. You can layer these middleware components to support account-aware routes for your entire application, while a subset of the application requires authorizing.
 
 Create the account session:
 
 ```rs
 create_session(
     "some-account-id",
-    &EncodingKey::from_secret(state.service_secret.value.as_bytes()),
+    &EncodingKey::from_secret(...),
     Duration::from_secs(60),
 );
 ```
 
-With `Credential::from_authorization_header`, a client may pass the session as the `authorization` header. With `Credential::from_cookie`, a client may pass the session as the `__Host-omn-sess` cookie. For a simple, user-facing web application, you can set the `__Host-omn-sess` cookie when the account signs in, in order to authenticate requests to the service running on the same origin. If the application shares a session across multiple services on different origins, it can expose the session for use by the client in the `authorization` header for programmatic, cross-origin requests. You can plug in your own handling for extracting credentials from requests with a custom `extract_credential` handler.
+With `Credential::from_authorization_header`, a client may pass the session as the `authorization` header. With `Credential::from_cookie`, a client may pass the session as a cookie. For a simple, user-facing web application, you can set a `__Host-` cookie when the account signs in, in order to authenticate requests to the service running on the same origin. If the application shares a session across multiple services on different origins, it might expose the session for use by the client in the `authorization` header for programmatic or cross-origin requests. You can plug in your own handling for extracting credentials from requests with a custom `extract_credential` handler.
 
 Requests from an unauthenticated caller will reject with a 401 response.
 
-For an authenticated caller, the account object from `account_lookup` can be retrieved from request state to avoid redundant lookup in handlers:
+For an authenticated caller, the account object from `get_account` can be used throughout the request lifecycle to avoid redundant lookup in handlers:
 
 ```rs
 pub async fn handler(
@@ -179,7 +168,3 @@ pub async fn handler(
     println!("Caller is: {}", caller);
 }
 ```
-
-Because a variety of data may need to be passed and verified between an application and its callers, `encode_claims` and `decode_claims` may also be used for other purposes other than authentication. Note that claims are signed but not encrypted.
-
-In addition to claims-based utilities, this crate wraps `aes_gcm` to provide utilties `encrypt_string_aes256_gcm` and `decrypt_string_aes256_gcm`. A secret created by `create_service_secret` can also be used with these encryption utilities.

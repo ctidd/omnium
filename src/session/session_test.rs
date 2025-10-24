@@ -1,7 +1,8 @@
-use std::ops::{Add, Sub};
+use std::ops::Add;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use async_trait::async_trait;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use axum::middleware::from_fn_with_state;
@@ -9,29 +10,30 @@ use axum::Extension;
 use axum::{routing::get, Router};
 use axum_extra::extract::CookieJar;
 use http_body_util::BodyExt;
-use jsonwebtoken::EncodingKey;
 use tower::ServiceExt;
 
 use crate::api::response::JsonStatus;
-use crate::security::claims::encode_claims;
-use crate::security::secrets::{create_service_secret, ServiceSecret};
-use crate::security::session::{
-    authenticate, create_session, decorate, Credential, SessionClaims, SessionManager,
-    SESSION_CLAIMS_TYPE,
-};
+use crate::session::session::{authorize, resolve, Credential, SessionClaims, SessionManager};
 
 #[derive(Clone)]
 struct FakeAccount {
     name: String,
 }
 
-struct FakeAppState {
-    pub service_secret: ServiceSecret,
+struct FakeAppState {}
+
+fn fake_encode_claims(claims: &SessionClaims) -> anyhow::Result<String> {
+    Ok(serde_json::to_string(claims)?)
 }
 
+fn fake_decode_claims(credential: &str) -> anyhow::Result<SessionClaims> {
+    Ok(serde_json::from_str(credential)?)
+}
+
+#[async_trait]
 impl SessionManager<FakeAccount> for Arc<FakeAppState> {
-    async fn get_service_secret(&self) -> anyhow::Result<&ServiceSecret> {
-        Ok(&self.service_secret)
+    async fn decode_claims(&self, credential: Credential) -> anyhow::Result<SessionClaims> {
+        fake_decode_claims(&credential.0)
     }
 
     async fn get_account(&self, _account_id: String) -> anyhow::Result<Option<FakeAccount>> {
@@ -50,9 +52,7 @@ impl SessionManager<FakeAccount> for Arc<FakeAppState> {
 }
 
 fn fake_app_state() -> Arc<FakeAppState> {
-    Arc::new(FakeAppState {
-        service_secret: create_service_secret().unwrap(),
-    })
+    Arc::new(FakeAppState {})
 }
 
 fn app(state: Arc<FakeAppState>) -> Router {
@@ -65,11 +65,11 @@ fn app(state: Arc<FakeAppState>) -> Router {
         )
         .layer(from_fn_with_state(
             state.clone(),
-            authenticate::<FakeAccount, Arc<FakeAppState>>,
+            authorize::<FakeAccount, Arc<FakeAppState>>,
         ))
         .layer(from_fn_with_state(
             state.clone(),
-            decorate::<FakeAccount, Arc<FakeAppState>>,
+            resolve::<FakeAccount, Arc<FakeAppState>>,
         ))
         .with_state(state)
 }
@@ -77,11 +77,8 @@ fn app(state: Arc<FakeAppState>) -> Router {
 #[tokio::test]
 async fn test_session_header_is_accepted() {
     let state = fake_app_state();
-
-    let claims = create_session(
-        "test-account-id",
-        &EncodingKey::from_secret(state.service_secret.value.as_bytes()),
-        Duration::from_secs(60),
+    let claims = fake_encode_claims(
+        &SessionClaims::new("test-account-id", Duration::from_secs(60)).unwrap(),
     );
 
     let app = app(state).into_service();
@@ -108,99 +105,11 @@ async fn test_session_header_is_accepted() {
 }
 
 #[tokio::test]
-async fn test_barely_expired_session_header_is_still_accepted() {
-    let state = fake_app_state();
-
-    let claims = encode_claims(
-        &SessionClaims {
-            sub: String::from("test-account-id"),
-            exp: usize::try_from(
-                SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .sub(Duration::from_secs(45))
-                    .as_secs(),
-            )
-            .unwrap(),
-            omn_cl_typ: SESSION_CLAIMS_TYPE.into(),
-        },
-        &EncodingKey::from_secret(state.service_secret.value.as_bytes()),
-    );
-
-    let app = app(state).into_service();
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/account")
-                .method(Method::GET)
-                .header("authorization", format!("Bearer {}", claims.unwrap()))
-                .header("accept", "application/json")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-}
-
-#[tokio::test]
-async fn test_expired_session_header_is_rejected() {
-    let state = fake_app_state();
-
-    let claims = encode_claims(
-        &SessionClaims {
-            sub: String::from("test-account-id"),
-            exp: usize::try_from(
-                SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .sub(Duration::from_secs(120))
-                    .as_secs(),
-            )
-            .unwrap(),
-            omn_cl_typ: SESSION_CLAIMS_TYPE.into(),
-        },
-        &EncodingKey::from_secret(state.service_secret.value.as_bytes()),
-    );
-
-    let app = app(state).into_service();
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/account")
-                .method(Method::GET)
-                .header("authorization", format!("Bearer {}", claims.unwrap()))
-                .header("accept", "application/json")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-
-    let response_body = response.into_body().collect().await.unwrap().to_bytes();
-    let response_body: JsonStatus = serde_json::from_slice(&response_body).unwrap();
-
-    let expected_body = JsonStatus {
-        reason: Some(String::from("Unauthorized")),
-        detail: None,
-    };
-
-    assert_eq!(response_body, expected_body);
-}
-
-#[tokio::test]
 async fn test_missing_header_bearer_prefix_is_rejected() {
     let state = fake_app_state();
 
-    let claims = create_session(
-        "test-account-id",
-        &EncodingKey::from_secret(state.service_secret.value.as_bytes()),
-        Duration::from_secs(60),
+    let claims = fake_encode_claims(
+        &SessionClaims::new("test-account-id", Duration::from_secs(60)).unwrap(),
     );
 
     let app = app(state).into_service();
@@ -234,22 +143,18 @@ async fn test_missing_header_bearer_prefix_is_rejected() {
 #[tokio::test]
 async fn test_wrong_claims_type_is_rejected() {
     let state = fake_app_state();
-
-    let claims = encode_claims(
-        &SessionClaims {
-            sub: String::from("test-account-id"),
-            exp: usize::try_from(
-                SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .add(Duration::from_secs(1000))
-                    .as_secs(),
-            )
-            .unwrap(),
-            omn_cl_typ: "illegal".to_string(),
-        },
-        &EncodingKey::from_secret(state.service_secret.value.as_bytes()),
-    );
+    let claims = fake_encode_claims(&SessionClaims {
+        sub: String::from("test-account-id"),
+        exp: usize::try_from(
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .add(Duration::from_secs(1000))
+                .as_secs(),
+        )
+        .unwrap(),
+        omn_cl_typ: "illegal".to_string(),
+    });
 
     let app = app(state).into_service();
 

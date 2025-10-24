@@ -1,29 +1,25 @@
-use std::time::Duration;
+use std::{
+    ops::Add,
+    time::{Duration, SystemTime},
+};
 
+use async_trait::async_trait;
 use axum::extract::{MatchedPath, State};
 use axum_extra::extract::CookieJar;
 
 use axum::{extract::Request, http::StatusCode, middleware::Next};
-use jsonwebtoken::{DecodingKey, EncodingKey};
 use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::api::response::{JsonResponse, ResponseError};
-use crate::security::claims::decode_claims;
-use crate::security::claims::{encode_claims, expires_in};
-use crate::security::secrets::ServiceSecret;
 
 pub const SESSION_CLAIMS_TYPE: &str = "session";
 
+#[async_trait]
 pub trait SessionManager<U> {
-    fn get_service_secret(
-        &self,
-    ) -> impl std::future::Future<Output = anyhow::Result<&ServiceSecret>> + Send;
+    async fn decode_claims(&self, token: Credential) -> anyhow::Result<SessionClaims>;
 
-    fn get_account(
-        &self,
-        account_id: String,
-    ) -> impl std::future::Future<Output = anyhow::Result<Option<U>>> + Send;
+    async fn get_account(&self, account_id: String) -> anyhow::Result<Option<U>>;
 
     fn extract_credential(&self, request: &Request, cookies: &CookieJar) -> Option<Credential>;
 }
@@ -35,23 +31,27 @@ pub struct SessionClaims {
     pub omn_cl_typ: String,
 }
 
-pub fn create_session(
-    account_id: &str,
-    encoding_key: &EncodingKey,
-    duration: Duration,
-) -> anyhow::Result<String> {
-    encode_claims(
-        &SessionClaims {
+impl SessionClaims {
+    pub fn expires_in(duration: Duration) -> anyhow::Result<usize> {
+        Ok(usize::try_from(
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .add(duration)
+                .as_secs(),
+        )?)
+    }
+
+    pub fn new(account_id: &str, expires_in: Duration) -> anyhow::Result<SessionClaims> {
+        Ok(SessionClaims {
             sub: String::from(account_id),
-            exp: expires_in(duration)?,
+            exp: SessionClaims::expires_in(expires_in)?,
             omn_cl_typ: SESSION_CLAIMS_TYPE.into(),
-        },
-        encoding_key,
-    )
+        })
+    }
 }
 
 #[derive(Clone)]
-pub struct Credential(String);
+pub struct Credential(pub String);
 
 impl Credential {
     pub fn from_authorization_header(request: &Request) -> Option<Credential> {
@@ -63,15 +63,15 @@ impl Credential {
             .map(|token| Credential(token.to_string()))
     }
 
-    pub fn from_cookie(cookies: &CookieJar) -> Option<Credential> {
+    pub fn from_cookie(cookie_name: &str, cookies: &CookieJar) -> Option<Credential> {
         cookies
-            .get("__Host-omn-sess")
+            .get(cookie_name)
             .and_then(|cookie| Some(cookie.value_trimmed()))
             .map(|header| Credential(header.into()))
     }
 }
 
-pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionManager<U>>(
+pub async fn authorize<U: Clone + Send + Sync + 'static, S: SessionManager<U>>(
     request: Request,
     next: Next,
 ) -> core::result::Result<axum::response::Response, ResponseError> {
@@ -83,7 +83,7 @@ pub async fn authenticate<U: Clone + Send + Sync + 'static, S: SessionManager<U>
     }
 }
 
-pub async fn decorate<U: Clone + Send + Sync + 'static, S: SessionManager<U>>(
+pub async fn resolve<U: Clone + Send + Sync + 'static, S: SessionManager<U>>(
     State(session_manager): State<S>,
     cookies: CookieJar,
     mut request: Request,
@@ -95,23 +95,16 @@ pub async fn decorate<U: Clone + Send + Sync + 'static, S: SessionManager<U>>(
         None => info!("Authenticating path: {}", "No matched path"),
     }
 
-    // Extract credential from either session cookie or authorization header:
-    let credential = session_manager
-        .extract_credential(&request, &cookies)
-        .map(|credential| credential.0);
+    let credential = session_manager.extract_credential(&request, &cookies);
 
-    // Authenticate using the credential:
     if let Some(credential) = credential {
-        if let Ok(decoded) = decode_claims::<SessionClaims>(
-            &credential,
-            &DecodingKey::from_secret(session_manager.get_service_secret().await?.value.as_bytes()),
-        ) {
-            if decoded.claims.omn_cl_typ != SESSION_CLAIMS_TYPE {
-                info!("Authentication failed! Illegal claims type.");
+        if let Ok(decoded) = session_manager.decode_claims(credential).await {
+            if decoded.omn_cl_typ != SESSION_CLAIMS_TYPE {
+                info!("Account resolve failed! Illegal claims type.");
                 return Ok(next.run(request).await);
             }
 
-            let account_id = decoded.claims.sub;
+            let account_id = decoded.sub;
 
             let lookup = session_manager.get_account(account_id).await?;
 
@@ -121,16 +114,16 @@ pub async fn decorate<U: Clone + Send + Sync + 'static, S: SessionManager<U>>(
                     info!("Inserted account to request extensions...");
                 }
                 None => {
-                    info!("Authentication failed! Account lookup returned no result.");
+                    info!("Account resolve failed! Account lookup returned no result.");
                     return Ok(next.run(request).await);
                 }
             }
         } else {
-            info!("Authentication failed! Unable to decode claims.");
+            info!("Account resolve failed! Unable to decode claims.");
             return Ok(next.run(request).await);
         }
     } else {
-        info!("Authentication skipped: No credential in request.");
+        info!("Account resolve skipped: No credential in request.");
         return Ok(next.run(request).await);
     }
 
